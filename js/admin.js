@@ -1,6 +1,8 @@
-// 管理画面（大元と担当指導員をまとめたもの）。ログインした人で中身が変わる
-// ・管理者（admins）：指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定
-// ・指導員（instructors）：自分の担当の教習生の登録・編集・削除・QR、設定の確認
+// 管理画面の本体。2つのページで使う（body の data-mode で切り替え）
+// ・admin.html（data-mode="admin"）：大元の管理画面。管理者だけがログインする。指導員の登録・削除と指導員用QR、
+//   全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定
+// ・manage.html（data-mode="staff"）：指導員の画面の中の「教習生の管理」。ログインは指導員の画面で済ませてあり、
+//   ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
@@ -8,6 +10,7 @@ import {
 import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
+const MODE = document.body.dataset.mode === "staff" ? "staff" : "admin";
 const root = document.getElementById("app");
 const S = { uid: null, me: null, isAdmin: false, isInst: false, tab: "students", instructors: [], students: [], sel: new Set(), filter: "", sort: { k: "studentNo", dir: 1 } };
 
@@ -18,22 +21,29 @@ function newToken() {
 const studentUrl = tok => `${CFG.appUrl}student.html?t=${encodeURIComponent(tok)}`;
 const instructorUrl = i => `${CFG.appUrl}instructor.html${i.email ? `?e=${encodeURIComponent(i.email)}` : ""}`;
 const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（未設定）";
-const tabs = () => [["students", `${S.isAdmin ? "教習生" : "担当の教習生"}（${S.students.length}人）`], ...(S.isAdmin ? [["instructors", `指導員（${S.instructors.length}人）`]] : []), ["settings", "設定"]];
+const tabs = () => S.isAdmin ? [["students", `教習生（${S.students.length}人）`], ["instructors", `指導員（${S.instructors.length}人）`], ["settings", "設定"]] : [["students", `担当の教習生（${S.students.length}人）`]];
 
+// 教習生の管理（指導員）はここでログインしない。指導員の画面へ案内する
+function gate(msg) {
+  root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(msg)}</div><a class="btn accent full center" style="text-decoration:none" href="instructor.html">指導員の画面を開く</a></div></section>`;
+}
 function renderLogin(msg = "") {
-  root.innerHTML = `<section class="panel"><div class="phead"><div><h2>管理画面（職員ログイン）</h2><small>${esc(CFG.schoolName)}</small></div></div>
+  root.innerHTML = `<section class="panel"><div class="phead"><div><h2>管理者ログイン</h2><small>${esc(CFG.schoolName)}</small></div></div>
   <div class="body"><form onsubmit="return false"><div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username"></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }
 onViewChange(render);
 onAuthStateChanged(auth, async user => {
-  if (!user) { S.uid = null; renderLogin(); return; }
+  if (!user) { S.uid = null; MODE === "staff" ? gate("指導員の画面からログインしてください。") : renderLogin(); return; }
   S.uid = user.uid; S.tab = "students"; S.sel = new Set(); S.filter = "";
   try {
     const [ad, me] = await Promise.all([getDoc(doc(db, "admins", user.uid)), getDoc(doc(db, "instructors", user.uid))]);
-    S.isAdmin = ad.exists(); S.isInst = me.exists(); S.me = me.exists() ? me.data() : null;
-    if (!S.isAdmin && !S.isInst) { await signOut(auth); renderLogin("管理者・指導員として登録されていません。事務所に確認してください。"); return; }
+    S.me = me.exists() ? me.data() : null;
+    // 大元の管理画面は管理者だけ、教習生の管理は指導員だけ（ページごとに役割を1つに決める）
+    S.isAdmin = MODE === "admin" && ad.exists(); S.isInst = MODE === "staff" && me.exists();
+    if (MODE === "admin" && !S.isAdmin) { S.uid = null; await signOut(auth); renderLogin("この画面は管理者専用です。"); return; }
+    if (MODE === "staff" && !S.isInst) { S.uid = null; gate("指導員として登録されていません。事務所に確認してください。"); return; }
     await loadAll();
   } catch (e) { renderLogin(friendlyError(e)); }
 });
@@ -49,13 +59,13 @@ async function loadAll() {
 function render() {
   if (!S.uid) return;
   if (isPC()) return renderPC();
-  let h = `<div class="topbar noprint"><div><h1>管理画面</h1><small>${esc(who())}</small></div>
-    <span>${S.isInst ? `<a class="linkbtn" href="instructor.html" style="text-decoration:none">割り当てへ</a>` : ""}<button class="linkbtn" data-act="logout">ログアウト</button></span></div>
-  <div class="seg noprint" role="group" style="grid-template-columns:repeat(${tabs().length},1fr)">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</div>`;
+  let h = `<div class="topbar noprint"><div><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small></div>
+    <span>${S.isInst ? `<a class="linkbtn" href="instructor.html" style="text-decoration:none">割り当てに戻る</a>` : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
+  ${tabs().length < 2 ? "" : `<div class="seg noprint" role="group" style="grid-template-columns:repeat(${tabs().length},1fr)">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</div>`}`;
   h += S.tab === "instructors" ? renderInstructors() : S.tab === "settings" ? renderSettings() : renderStudents();
   root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
 }
-const who = () => S.isAdmin ? `${CFG.schoolName}・管理者${S.me ? `（${S.me.name}）` : ""}` : `${S.me ? S.me.name : ""} 指導員`;
+const who = () => S.isAdmin ? `${CFG.schoolName}・管理者` : `${S.me ? S.me.name : ""} 指導員の担当（${S.students.length}人）`;
 const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(toKatakana(f)) || String(s.studentNo).includes(f) || String(s.license || "").includes(f) || (S.isAdmin && iname(s.instructorUid).includes(f));
 const assignSelect = s => `<select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select>`;
 const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => match(s, f)); };
@@ -64,9 +74,9 @@ const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); ret
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
-  root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>管理画面</h1><small>${esc(who())}</small>
+  root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small>
     <nav class="pcnav">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}${S.isInst ? `<a href="instructor.html">予約の割り当てへ</a>` : ""}</nav>
-    <div class="foot">${viewToggle()}<button class="linkbtn" data-act="logout">ログアウト</button></div></aside>
+    <div class="foot">${viewToggle()}${S.isAdmin ? `<button class="linkbtn" data-act="logout">ログアウト</button>` : ""}</div></aside>
   <main class="pcmain"><div class="noprint">${main}</div><div id="printArea"></div></main></div>`;
 }
 function renderStudentsPC() {

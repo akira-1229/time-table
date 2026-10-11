@@ -221,7 +221,7 @@ const info = s => {
 function render() {
   if (!S.uid) return;
   const ds = days(); const wEnd = ds[ds.length - 1];
-  let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<a href="admin.html">管理画面</a></small></div>
+  let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<a href="manage.html">教習生の管理</a></small></div>
     <span>${installButton()}<button class="linkbtn" data-act="push">通知</button><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
   h += `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }

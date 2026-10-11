@@ -218,7 +218,7 @@ function expiryAlert_() {
   Object.keys(byInst).forEach(uid => {
     const path = `instructors/${uid}`, t = getDoc_(path); if (!t) return;
     const list = byInst[uid];
-    ni += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}admin.html`) ? 1 : 0;
+    ni += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}manage.html`) ? 1 : 0;
   });
   Logger.log(`期限のお知らせ：教習生${ns}人・指導員${ni}人に送信`);
 }
