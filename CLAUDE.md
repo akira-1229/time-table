@@ -36,8 +36,8 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）
   instructor.html          指導員（ログイン必須）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
-  admin.html               大元の管理（管理者ログイン）。指導員の登録・削除と指導員用QR、教習生の一覧と担当の付け替え、設定の確認。qrcodejs を cdnjs から読み込む
-  manage.html              担当指導員の管理（指導員ログイン）。自分の担当の教習生の登録・編集・削除、QRカードの印刷・再発行。指導員画面の「教習生の管理」から開く
+  admin.html               管理画面（大元と担当指導員を1つにまとめた。2026年10月）。ログインした人で中身が変わる：管理者は指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定。指導員は自分の担当の教習生の登録・編集・削除・QRと設定の確認。qrcodejs を cdnjs から読み込む
+  manage.html              旧「担当指導員の管理」。admin.html へ転送するだけ
   check.html               Firebase切り替え前の確認用。指導員と教習生の画面を並べて反映を確認する
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
@@ -49,8 +49,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
   js/instructor.js         指導員画面（ルール判定の本体）
-  js/admin.js              大元の管理画面
-  js/manage.js             担当指導員の管理画面
+  js/admin.js              管理画面（管理者・指導員の両方）
 firestore.rules            セキュリティルール
 firestore.indexes.json     必要な索引（コレクショングループ2つ＋students）
 apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、テスト送信）
@@ -58,7 +57,7 @@ apps-script/appsscript.json
 SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
 ```
 
-管理画面（admin.html・manage.html）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
+管理画面（admin.html）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
 
 画面のコードの書き方：状態はモジュール内の `S` オブジェクト、`render()` で `innerHTML` を丸ごと描き直し、クリックは `data-act` 属性のイベント委譲。画面の文言は丁寧語（です・ます）。
 
