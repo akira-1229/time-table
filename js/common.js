@@ -213,13 +213,15 @@ export function isPC() {
 }
 export const applyView = () => document.body.classList.toggle("pc", isPC());
 export const viewToggle = () => `<button class="linkbtn noprint" data-act="toggleView">${isPC() ? "スマホ表示にする" : "PC表示にする"}</button>`;
-export function onViewChange(cb) {
-  applyView();
-  matchMedia("(min-width: 1024px)").addEventListener("change", () => { applyView(); cb(); });
+// active：その画面が今見えているか（指導員の画面の中の「教習生の管理」は、開いている間だけPC表示にする）
+export function onViewChange(cb, active = () => true) {
+  const apply = () => active() ? applyView() : document.body.classList.remove("pc");
+  apply();
+  matchMedia("(min-width: 1024px)").addEventListener("change", () => { apply(); if (active()) cb(); });
   document.addEventListener("click", e => {
-    if (!e.target.closest('[data-act="toggleView"]')) return;
+    if (!e.target.closest('[data-act="toggleView"]') || !active()) return;
     try { localStorage.setItem(VIEW_KEY, isPC() ? "sp" : "pc"); } catch (err) { }
-    applyView(); cb();
+    apply(); cb();
   });
 }
 // PC表示の表：列の定義から作る。並べ替えは見出しをクリック

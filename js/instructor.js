@@ -43,6 +43,7 @@ onAuthStateChanged(auth, async user => {
     listenForeground(() => loadWeek());
     watchCancelReqs();
     await loadWeek();
+    if (location.hash === "#manage") showView("manage");
   } catch (e) { renderLogin(friendlyError(e)); }
 });
 
@@ -221,7 +222,7 @@ const info = s => {
 function render() {
   if (!S.uid) return;
   const ds = days(); const wEnd = ds[ds.length - 1];
-  let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<a href="manage.html">教習生の管理</a></small></div>
+  let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<button class="linkbtn" style="padding:0;min-height:0;font-size:12px" data-act="view" data-v="manage">教習生の管理</button></small></div>
     <span>${installButton()}<button class="linkbtn" data-act="push">通知</button><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
   h += `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
@@ -520,6 +521,16 @@ async function confirmWeek() {
   S.confirmed = true; render(); toast(`${Object.keys(byStudent).length}人に通知しました`);
 }
 
+/* ---------- 画面の切り替え（予約の割り当て／教習生の管理） ---------- */
+// 教習生の管理は js/admin.js（data-mode="staff"）が #mng に描く
+function showView(v) {
+  const m = v === "manage";
+  document.getElementById("appWrap").hidden = m; document.getElementById("mngWrap").hidden = !m;
+  if (m) document.dispatchEvent(new Event("mng:open")); else document.body.classList.remove("pc");
+  try { history.replaceState(null, "", m ? "#manage" : location.pathname + location.search); } catch (e) { }
+  window.scrollTo(0, 0);
+}
+
 /* ---------- 操作 ---------- */
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
@@ -532,7 +543,8 @@ document.addEventListener("click", async e => {
       t.disabled = true;
       try { await signInWithEmailAndPassword(auth, em, pw); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); }
     }
-    else if (a === "logout") { stopWatch(); stopCancelWatch(); await signOut(auth); }
+    else if (a === "logout") { showView("assign"); stopWatch(); stopCancelWatch(); await signOut(auth); }
+    else if (a === "view") { showView(t.dataset.v); if (t.dataset.v === "assign" && S.uid) await loadWeek(); }
     else if (a === "reload") { await loadWeek(); }
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }

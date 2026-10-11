@@ -1,17 +1,18 @@
 // 管理画面の本体。2つのページで使う（body の data-mode で切り替え）
 // ・admin.html（data-mode="admin"）：大元の管理画面。管理者だけがログインする。指導員の登録・削除と指導員用QR、
 //   全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定
-// ・manage.html（data-mode="staff"）：指導員の画面の中の「教習生の管理」。ログインは指導員の画面で済ませてあり、
-//   ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
+// ・instructor.html（data-mode="staff"）：指導員の画面に組み込んだ「教習生の管理」（#mng の中に描く）。
+//   ログインは指導員の画面のものをそのまま使い、ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 const MODE = document.body.dataset.mode === "staff" ? "staff" : "admin";
-const root = document.getElementById("app");
+const root = document.getElementById(MODE === "staff" ? "mng" : "app");
+const shown = () => MODE === "admin" || !document.getElementById("mngWrap").hidden;
 const S = { uid: null, me: null, isAdmin: false, isInst: false, tab: "students", instructors: [], students: [], sel: new Set(), filter: "", sort: { k: "studentNo", dir: 1 } };
 
 function newToken() {
@@ -24,18 +25,18 @@ const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（
 const tabs = () => S.isAdmin ? [["students", `教習生（${S.students.length}人）`], ["instructors", `指導員（${S.instructors.length}人）`], ["settings", "設定"]] : [["students", `担当の教習生（${S.students.length}人）`]];
 
 // 教習生の管理（指導員）はここでログインしない。指導員の画面へ案内する
-function gate(msg) {
-  root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(msg)}</div><a class="btn accent full center" style="text-decoration:none" href="instructor.html">指導員の画面を開く</a></div></section>`;
-}
+function gate(msg) { root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(msg)}</div></div></section>`; }
 function renderLogin(msg = "") {
   root.innerHTML = `<section class="panel"><div class="phead"><div><h2>管理者ログイン</h2><small>${esc(CFG.schoolName)}</small></div></div>
   <div class="body"><form onsubmit="return false"><div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username"></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }
-onViewChange(render);
+onViewChange(render, shown);
+// 指導員の画面で「教習生の管理」を開いた時に、最新の内容で描き直す
+document.addEventListener("mng:open", () => { applyView(); if (S.uid) loadAll(); });
 onAuthStateChanged(auth, async user => {
-  if (!user) { S.uid = null; MODE === "staff" ? gate("指導員の画面からログインしてください。") : renderLogin(); return; }
+  if (!user) { S.uid = null; MODE === "staff" ? gate("ログインしてください。") : renderLogin(); return; }
   S.uid = user.uid; S.tab = "students"; S.sel = new Set(); S.filter = "";
   try {
     const [ad, me] = await Promise.all([getDoc(doc(db, "admins", user.uid)), getDoc(doc(db, "instructors", user.uid))]);
@@ -60,7 +61,7 @@ function render() {
   if (!S.uid) return;
   if (isPC()) return renderPC();
   let h = `<div class="topbar noprint"><div><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small></div>
-    <span>${S.isInst ? `<a class="linkbtn" href="instructor.html" style="text-decoration:none">割り当てに戻る</a>` : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
+    <span>${S.isInst ? `<button class="linkbtn" data-act="view" data-v="assign">割り当てに戻る</button>` : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
   ${tabs().length < 2 ? "" : `<div class="seg noprint" role="group" style="grid-template-columns:repeat(${tabs().length},1fr)">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</div>`}`;
   h += S.tab === "instructors" ? renderInstructors() : S.tab === "settings" ? renderSettings() : renderStudents();
   root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
@@ -75,7 +76,7 @@ const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); ret
 function renderPC() {
   const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
   root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small>
-    <nav class="pcnav">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}${S.isInst ? `<a href="instructor.html">予約の割り当てへ</a>` : ""}</nav>
+    <nav class="pcnav">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}${S.isInst ? `<button data-act="view" data-v="assign">予約の割り当てへ</button>` : ""}</nav>
     <div class="foot">${viewToggle()}${S.isAdmin ? `<button class="linkbtn" data-act="logout">ログアウト</button>` : ""}</div></aside>
   <main class="pcmain"><div class="noprint">${main}</div><div id="printArea"></div></main></div>`;
 }
@@ -242,6 +243,8 @@ document.addEventListener("change", e => {
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
   const t = e.target.closest("[data-act]"); if (!t || ["sel", "selPage", "reassign"].includes(t.dataset.act)) return;
+  // 指導員の画面に組み込んだ時は、自分の部分（#mng と自分が開いたシート）の操作だけを受け持つ。ログイン・ログアウトは指導員の画面に任せる
+  if (MODE === "staff" && (!shown() || ["login", "logout"].includes(t.dataset.act))) return;
   const a = t.dataset.act;
   try {
     if (a === "login") { try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); } }

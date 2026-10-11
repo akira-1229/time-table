@@ -190,4 +190,4 @@ body.pc .sheet{max-width:600px;max-height:none;height:100vh;border-radius:0;box-
 body.pc .sheet .list{max-height:none}
 .pcgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media print{.pcside,.pctool{display:none!important} .pcl{display:block}}
-body.pc #app>section.panel{max-width:480px;margin:60px auto}
+body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}

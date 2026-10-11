@@ -35,9 +35,9 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
 （リポジトリ直下 ＝ GitHub Pages で公開する中身。もとは web/ フォルダだった）
   index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）
-  instructor.html          指導員（ログイン必須）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
+  instructor.html          指導員の画面（ログイン必須。**指導員がログインするのはここだけ**）。「予約の割り当て」と「教習生の管理」（自分の担当の教習生の登録・編集・削除・QR）を上のボタンで切り替える。教習生の管理は js/admin.js を data-mode="staff" で #mng に描く（#manage で直接開く）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
   admin.html               大元の管理画面。**ログインするのは管理者（依頼者）だけ**。指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定。指導員がログインしようとしても入れない
-  manage.html              指導員の画面の中の「教習生の管理」（自分の担当の教習生の登録・編集・削除・QR）。**指導員がログインするのは指導員の画面（instructor.html）だけ**で、ここではログインしない（未ログインなら指導員の画面へ案内）。admin.html と同じ js/admin.js を data-mode="staff" で使う
+  manage.html              旧「教習生の管理」。instructor.html#manage へ転送するだけ
   check.html               Firebase切り替え前の確認用。指導員と教習生の画面を並べて反映を確認する
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
@@ -49,7 +49,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
   js/instructor.js         指導員画面（ルール判定の本体）
-  js/admin.js              大元の管理画面と、指導員の「教習生の管理」の両方（body の data-mode で切り替え）
+  js/admin.js              大元の管理画面と、指導員の画面に組み込んだ「教習生の管理」の両方（body の data-mode で切り替え）
 firestore.rules            セキュリティルール
 firestore.indexes.json     必要な索引（コレクショングループ2つ＋students）
 apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、テスト送信）
@@ -57,7 +57,7 @@ apps-script/appsscript.json
 SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
 ```
 
-管理画面（admin.html・manage.html）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
+管理画面（admin.html と、指導員の画面の「教習生の管理」）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
 
 画面のコードの書き方：状態はモジュール内の `S` オブジェクト、`render()` で `innerHTML` を丸ごと描き直し、クリックは `data-act` 属性のイベント委譲。画面の文言は丁寧語（です・ます）。
 
