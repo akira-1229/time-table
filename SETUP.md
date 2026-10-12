@@ -81,7 +81,7 @@
 
 1. プロジェクトの概要の横の歯車 →「プロジェクトの設定」
 2. 「マイアプリ」→ ウェブ（`</>`）を追加。アプリ名は `timetable`。Hostingの設定は不要
-3. 表示される `firebaseConfig` の6つの値を、`web/js/config.js` の `firebase:` の中に貼り付け
+3. 表示される `firebaseConfig` の6つの値を、`js/config.js` の `firebase:` の中に貼り付け（Claudeに値を送れば書き換えてもらえます）
 4. 同じ画面の「Cloud Messaging」タブ →「ウェブプッシュ証明書」→「鍵ペアを生成」
 5. 表示された鍵を `config.js` の `vapidKey` に貼り付け
 6. `config.js` の `demo` を `false` にする（本番のFirebaseを使うようになる）
@@ -107,10 +107,7 @@
 
 ## 7. GitHub Pagesに公開する
 
-1. GitHubで新しいリポジトリを作る（例：`timetable`）
-2. `web` フォルダの **中身** をすべてアップロード（`.nojekyll` も含める）
-3. リポジトリの「Settings」→「Pages」→ Branch を `main` / `(root)` にして保存
-4. 数分後、`https://ユーザー名.github.io/time-table/` が開ければ完了
+すでに公開済みです（`https://akira-1229.github.io/time-table/`）。`config.js` を書き換えて main に入れると、数分で反映されます。
 
 ## 8. 指導員と教習生を登録する
 
@@ -142,7 +139,7 @@
 | `DEADLINE_DAY` | 締切日（`config.js` と同じ数字） |
 | `REMIND_DAYS` | 締切の何日前に知らせるか（例：`3,1`） |
 | `EXPIRY_ALERT` | 教習期限・仮免期限のいつ、教習生本人と担当指導員に知らせるか（例：`2m,1m,2w`。m＝ヶ月前、w＝週間前、d＝日前。書かなければこの値） |
-| `TEST_UID` | 自分の指導員UID（テスト送信用） |
+| `TEST_UID` | テスト通知を送る指導員のUID（指導員の画面で「通知」をオンにした人） |
 
 6. エディタ上部の関数から **`setupTriggers`** を選んで「実行」→ 権限の確認画面で許可する
    - これで「5分おきに通知を送る」「毎朝9時に締切のお知らせ」が動き始めます
