@@ -10,15 +10,15 @@ self.APP_CONFIG = {
 
   // Firebaseコンソール → プロジェクトの設定 → マイアプリ → SDKの設定と構成（構成）
   firebase: {
-    apiKey: "ここに貼り付け",
-    authDomain: "ここに貼り付け",
-    projectId: "ここに貼り付け",
-    storageBucket: "ここに貼り付け",
-    messagingSenderId: "ここに貼り付け",
-    appId: "ここに貼り付け"
+    apiKey: "AIzaSyCHlQ2kd2iLn1OTVXDf4VQKijvyok-riNg",
+    authDomain: "shotoku-timetable.firebaseapp.com",
+    projectId: "shotoku-timetable",
+    storageBucket: "shotoku-timetable.firebasestorage.app",
+    messagingSenderId: "9594641929",
+    appId: "1:9594641929:web:fd79545ceab9e6e65de2d8"
   },
   // Cloud Messaging → ウェブプッシュ証明書 → 鍵ペア
-  vapidKey: "ここに貼り付け",
+  vapidKey: "BCUuPbX8z6un7YiOnS_fKdbDJO3NqqKTa4VA5InvPkS-nriFiKw0unpIArsNVK46OA5PVTae9kG7sMCU-lnX7RY",
 
   // GitHub Pagesの公開URL（最後に / を付ける）例: https://ユーザー名.github.io/time-table/
   appUrl: "https://akira-1229.github.io/time-table/",
