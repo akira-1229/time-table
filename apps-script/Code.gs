@@ -4,6 +4,7 @@
  * ・processOutbox：5分おきに起動。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
+ *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
  *
  * 必要なスクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）
  *   PROJECT_ID   … FirebaseのプロジェクトID
@@ -151,6 +152,7 @@ function processOutbox() {
 function dailyReminder() {
   try { inputReminder_(); } catch (e) { Logger.log('締切のお知らせでエラー: ' + e); }
   try { expiryAlert_(); } catch (e) { Logger.log('期限のお知らせでエラー: ' + e); }
+  try { kenteiAlert_(); } catch (e) { Logger.log('検定日のお知らせでエラー: ' + e); }
 }
 function inputReminder_() {
   const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));
@@ -221,6 +223,25 @@ function expiryAlert_() {
     ni += deliver_(path, t.fcmTokens, `期限が近い教習生が${list.length}件あります`, list.slice(0, 5).join('、') + (list.length > 5 ? ` ほか${list.length - 5}件` : ''), `${appUrl}instructor.html#manage`) ? 1 : 0;
   });
   Logger.log(`期限のお知らせ：教習生${ns}人・指導員${ni}人に送信`);
+}
+
+// 検定日の当日の朝に、教習生本人に知らせる（みきわめ合格時に指導員が入れた検定日。mikiwame1／mikiwame2 の kenteiDate）
+function kenteiAlert_() {
+  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const students = query_({
+    from: [{ collectionId: 'students' }],
+    where: { fieldFilter: { field: { fieldPath: 'active' }, op: 'EQUAL', value: { booleanValue: true } } }
+  });
+  const appUrl = prop('APP_URL'); let n = 0;
+  students.forEach(st => {
+    const s = st.data, tok = relPath_(st.name).split('/')[1];
+    const on = [s.mikiwame1, s.mikiwame2].some(m => m && m.passed && m.kenteiDate === today);
+    if (!on) return;
+    n += deliver_(`students/${tok}`, s.fcmTokens, '本日はいよいよ検定日です！',
+      'これまでに教わった事をよく思い出して頑張りましょう！',
+      `${appUrl}student.html?t=${encodeURIComponent(tok)}`) ? 1 : 0;
+  });
+  Logger.log(`検定日のお知らせ：${n}人に送信`);
 }
 
 /* ---------- 動作確認用：自分の端末にテスト通知 ---------- */
