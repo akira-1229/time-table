@@ -7,13 +7,13 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
-  uid: null, me: null, week: addDays(mondayOf(today()), 7), mode: "slot", pick: null, ptype: null,
+  uid: null, me: null, view: "assign", week: addDays(mondayOf(today()), getPref("startweek", "next") === "this" ? 0 : 7), mode: getPref("startmode", "slot"), balOpen: getPref("balopen", "0") === "1", pick: null, ptype: null,
   students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
 };
 const wid = () => dateStr(S.week);
@@ -38,16 +38,17 @@ firstVisitInstall("staff");
 let loginMsg = "";
 onAuthStateChanged(auth, async user => {
   self.__boot && self.__boot.push("instructor:ログイン確認");
-  if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; renderLogin(loginMsg); loginMsg = ""; return; }
+  if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; S.me = null; showView("assign", true); renderNav(); renderLogin(loginMsg); loginMsg = ""; return; }
   S.uid = user.uid;
   try {
     const me = await getDoc(doc(db, "instructors", user.uid));
     if (!me.exists()) { loginMsg = `指導員として登録されていません。事務所に確認してください。（このアカウントのユーザーUID：${user.uid}）`; await signOut(auth); return; }
-    S.me = me.data();
+    S.me = me.data(); renderNav();
     listenForeground(() => loadWeek());
     watchCancelReqs();
     await loadWeek();
     if (location.hash === "#manage") showView("manage");
+    else if (location.hash === "#settings") showView("settings");
   } catch (e) {
     // ログインはできているので、ログイン画面には戻さず、理由とやり直しのボタンを出す
     noteIndex(e);
@@ -253,13 +254,13 @@ function balanceHtml() {
 function render() {
   if (!S.uid) return;
   const ds = days(); const wEnd = ds[ds.length - 1];
-  let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<button class="linkbtn" style="padding:0;min-height:0;font-size:12px" data-act="view" data-v="manage">教習生の管理</button></small></div>
-    <span>${installButton()}<button class="linkbtn" data-act="push">通知</button><a class="linkbtn" href="guide-instructor.html">使い方</a><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
+  let h = `<div class="topbar"><div><h1>予約の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員・担当 ${S.students.length}人</small></div>
+    <span><button class="linkbtn" data-act="reload">最新の情報に更新</button></span></div>`;
   h += `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
-  h += `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
+  const top = h + `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
     ${S.confirmed ? '<span class="tag ok">確定済み</span>' : '<span class="tag draft">未確定</span>'}</div><div class="body">`;
-  h += indexBanner();
+  h = indexBanner();
   const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
   if (unchecked.length) {
     h += `<div class="banner warn"><b>終わった教習のチェックが${unchecked.length}件あります</b><br><span style="font-size:12px">教習生が来たら「実施」、来なかったら「欠席」を押してください（欠席は教習生に通知されます）。</span>`;
@@ -287,10 +288,12 @@ function render() {
     });
     h += `</div>`;
   }
+  const alertsH = h; h = "";
   const none = S.students.filter(s => weekCount(s.token) === 0).length;
   const total = ds.length * 10;
   h += `<div class="sum"><div><b>${S.bookings.length}</b>予約した枠</div><div class="${none ? "alert" : ""}"><b>${none}</b>まだ予約のない人</div><div><b>${total - S.bookings.length}</b>空いている枠</div></div>`;
   h += balanceHtml();
+  const sideTop = h; h = "";
   h += `<div class="seg" role="group" aria-label="割り当て方"><button aria-pressed="${S.mode === "slot"}" data-act="mode" data-v="slot">枠から選ぶ</button><button aria-pressed="${S.mode === "student"}" data-act="mode" data-v="student">教習生から選ぶ</button></div>`;
 
   let maxN = 1; ds.forEach(d => { for (let p = 1; p <= 10; p++) maxN = Math.max(maxN, S.students.filter(s => isFree(s.token, d, p)).length); });
@@ -332,6 +335,7 @@ function render() {
     h += `</tr>`;
   }
   h += `</tbody></table></div>`;
+  const gridH = h; h = "";
 
   if (S.mode === "student") {
     const list = S.students.slice().sort((a, b) => weekCount(a.token) - weekCount(b.token) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
@@ -343,6 +347,7 @@ function render() {
     h += `</div>`;
   }
 
+  const listH = h; h = "";
   const drafts = S.bookings.filter(b => b.status === "draft").length;
   if (!S.confirmed) {
     h += `<button class="btn accent full" style="margin-top:14px" data-act="confirm" ${drafts ? "" : "disabled"}>この週の予約を確定して通知（${drafts}件）</button>
@@ -356,7 +361,11 @@ function render() {
     if (un.length) h += `<button class="btn full" data-act="renotifyAll">未確認の${un.length}人にまとめて再通知</button>`;
     h += `</div>`;
   }
-  root.innerHTML = h + `</div></section><p class="center"><button class="linkbtn" data-act="reload">最新の情報に更新</button></p>`;
+  const confH = h;
+  // PC表示：左にマス目、右に集計・お知らせ・教習生の一覧・確定ボタン。スマホは上から順に並べる
+  root.innerHTML = top + (isPC()
+    ? `<div class="asg"><div class="asg-main">${gridH}</div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
+    : alertsH + sideTop + gridH + listH + confH) + `</div></section>`;
 }
 
 function slotSheet(ds, p, type = "normal", start) {
@@ -581,13 +590,63 @@ async function confirmWeek() {
 
 /* ---------- 画面の切り替え（予約の割り当て／教習生の管理） ---------- */
 // 教習生の管理は js/admin.js（data-mode="staff"）が #mng に描く
-function showView(v) {
-  const m = v === "manage";
-  document.getElementById("appWrap").hidden = m; document.getElementById("mngWrap").hidden = !m;
-  if (m) document.dispatchEvent(new Event("mng:open")); else document.body.classList.remove("pc");
-  try { history.replaceState(null, "", m ? "#manage" : location.pathname + location.search); } catch (e) { }
+// 画面の切り替え：assign（予約の管理）／manage（教習生の管理）／settings（設定）
+function showView(v, quiet) {
+  S.view = v;
+  document.getElementById("appWrap").hidden = v !== "assign";
+  document.getElementById("mngWrap").hidden = v !== "manage";
+  document.getElementById("setWrap").hidden = v !== "settings";
+  applyView();
+  if (v === "manage") document.dispatchEvent(new Event("mng:open"));
+  if (v === "settings") renderSettings();
+  if (quiet) return;
+  renderNav();
+  try { history.replaceState(null, "", v === "assign" ? location.pathname + location.search : "#" + v); } catch (e) { }
   window.scrollTo(0, 0);
 }
+
+/* ---------- 画面の切り替えタブ（PCは左端、スマホは画面の下。ログイン中はいつも出す） ---------- */
+const ICON = {
+  manage: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.6c2.9-.2 5 1.4 5.5 4.4"/></svg>',
+  assign: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h3M13.5 13.5h3M7.5 17h3"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>'
+};
+const NAV = [["manage", "教習生の管理"], ["assign", "予約の管理"], ["settings", "設定"]];
+function renderNav() {
+  const nav = document.getElementById("tabnav"), on = !!(S.uid && S.me);
+  document.body.classList.toggle("shell", on); nav.hidden = !on;
+  if (!on) { nav.innerHTML = ""; return; }
+  nav.innerHTML = `<div class="tn-head"><b>${esc(CFG.schoolName)}</b><small>${esc(S.me.name)} 指導員</small></div>
+    <div class="tn-tabs" role="tablist">${NAV.map(([v, t]) => `<button role="tab" aria-selected="${S.view === v}" data-act="view" data-v="${v}">${ICON[v]}<span>${t}</span></button>`).join("")}</div>
+    <div class="tn-foot"><a class="linkbtn" href="guide-instructor.html">使い方</a><button class="linkbtn" data-act="logout">ログアウト</button></div>`;
+}
+
+/* ---------- 設定 ---------- */
+const pc = (k, v, cur, t) => `<button class="chip" aria-pressed="${cur === v}" data-act="pref" data-k="${k}" data-v="${v}">${t}</button>`;
+function renderSettings() {
+  if (!S.me) return;
+  const sw = getPref("startweek", "next"), sm = getPref("startmode", "slot"), bo = getPref("balopen", "0");
+  document.getElementById("set").innerHTML = `<div class="topbar"><div><h1>設定</h1><small>${esc(S.me.name)} 指導員</small></div></div>
+  <section class="panel"><div class="body setpage">
+  ${lookSettingsHtml()}
+  <div class="setgrp"><h3>予約の管理</h3>
+    <div class="setlabel">開いた時に表示する週</div><div class="chips wrapchips">${pc("startweek", "next", sw, "来週")}${pc("startweek", "this", sw, "今週")}</div>
+    <div class="setlabel">最初の割り当て方</div><div class="chips wrapchips">${pc("startmode", "slot", sm, "枠から選ぶ")}${pc("startmode", "student", sm, "教習生から選ぶ")}</div>
+    <div class="setlabel">「今週の割り振り」の一覧</div><div class="chips wrapchips">${pc("balopen", "1", bo, "最初から開いておく")}${pc("balopen", "0", bo, "閉じておく")}</div>
+    <p class="setnote">「開いた時」の設定は、次に画面を開いた時から使われます。</p></div>
+  <div class="setgrp"><h3>通知・アプリ</h3><div class="list"><button class="btn full" data-act="push">この端末で通知を受け取る</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
+    <p class="setnote">キャンセル希望や期限が近い教習生のお知らせが届きます。</p></div>
+  <div class="setgrp"><h3>アカウント</h3><div class="item"><div><div class="t">${esc(S.me.name)}</div><div class="s">${esc(S.me.email || "")}</div></div><button class="btn" data-act="logout">ログアウト</button></div></div>
+  <div class="setgrp"><h3>困った時は</h3><div class="list"><a class="btn full center" style="text-decoration:none" href="guide-instructor.html">使い方を見る</a></div>
+    <p class="setnote">${esc(CFG.schoolName)}　電話 <span class="tel">${esc(CFG.schoolTel)}</span></p></div>
+  </div></section>`;
+}
+document.addEventListener("pref:change", e => {
+  if (e.detail.k === "balopen") S.balOpen = e.detail.v === "1";
+  if (S.view === "settings") renderSettings();
+  if (S.uid && S.me) render();
+});
+onViewChange(() => { if (S.uid && S.me) { render(); if (S.view === "settings") renderSettings(); } });
 
 /* ---------- 操作 ---------- */
 document.addEventListener("click", async e => {
@@ -601,7 +660,7 @@ document.addEventListener("click", async e => {
       t.disabled = true;
       try { await signInWithEmailAndPassword(auth, em, pw); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); }
     }
-    else if (a === "logout") { showView("assign"); stopWatch(); stopCancelWatch(); await signOut(auth); }
+    else if (a === "logout") { stopWatch(); stopCancelWatch(); await signOut(auth); }
     else if (a === "view") { showView(t.dataset.v); if (t.dataset.v === "assign" && S.uid) await loadWeek(); }
     else if (a === "reload") { await loadWeek(); }
     else if (a === "retry") location.reload();

@@ -230,12 +230,19 @@ export function isPC() {
   return typeof matchMedia !== "undefined" && matchMedia("(min-width: 1024px)").matches;
 }
 export const applyView = () => document.body.classList.toggle("pc", isPC());
+// 表示の切り替え：auto（幅で自動）／pc／sp。設定画面から変える
+export const getViewMode = () => { try { return localStorage.getItem(VIEW_KEY) || "auto"; } catch (e) { return "auto"; } };
+export function setViewMode(v) {
+  try { v === "auto" ? localStorage.removeItem(VIEW_KEY) : localStorage.setItem(VIEW_KEY, v); } catch (e) { }
+  document.dispatchEvent(new Event("view:change"));
+}
 export const viewToggle = () => `<button class="linkbtn noprint" data-act="toggleView">${isPC() ? "スマホ表示にする" : "PC表示にする"}</button>`;
 // active：その画面が今見えているか（指導員の画面の中の「教習生の管理」は、開いている間だけPC表示にする）
 export function onViewChange(cb, active = () => true) {
   const apply = () => active() ? applyView() : document.body.classList.remove("pc");
   apply();
   matchMedia("(min-width: 1024px)").addEventListener("change", () => { apply(); if (active()) cb(); });
+  document.addEventListener("view:change", () => { apply(); if (active()) cb(); });
   document.addEventListener("click", e => {
     if (!e.target.closest('[data-act="toggleView"]') || !active()) return;
     try { localStorage.setItem(VIEW_KEY, isPC() ? "sp" : "pc"); } catch (err) { }
@@ -258,3 +265,29 @@ export function pcTable(cols, rows, sort) {
   <tbody>${sorted.map(r => `<tr>${cols.map(c => `<td>${c.html ? c.html(r) : esc(c.v ? c.v(r) : r[c.k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 export const nextSort = (sort, k) => sort.k === k ? { k, dir: -sort.dir } : { k, dir: 1 };
+
+/* ---------- 端末ごとの設定（この端末のブラウザに覚える） ---------- */
+// 画面の明るさ（light／dark／system）と文字の大きさ（normal／large）。読み込み直後の反映は boot.js がする
+export function getPref(k, def) { try { return localStorage.getItem("timetable_" + k) || def; } catch (e) { return def; } }
+export function setPref(k, v) { try { localStorage.setItem("timetable_" + k, v); } catch (e) { } }
+export function applyLook() {
+  const r = document.documentElement, th = getPref("theme", "system"), fs = getPref("fontsize", "normal");
+  if (th === "light" || th === "dark") r.dataset.theme = th; else delete r.dataset.theme;
+  if (fs === "large") r.dataset.fs = "large"; else delete r.dataset.fs;
+}
+// 設定画面の「見た目」の部分（管理画面と指導員の画面で共通）
+const choice = (k, v, cur, t) => `<button class="chip" aria-pressed="${cur === v}" data-act="pref" data-k="${k}" data-v="${v}">${t}</button>`;
+export function lookSettingsHtml() {
+  const th = getPref("theme", "system"), fs = getPref("fontsize", "normal"), vm = getViewMode();
+  return `<div class="setgrp"><h3>画面の明るさ</h3><div class="chips wrapchips">${choice("theme", "light", th, "ライト（明るい）")}${choice("theme", "dark", th, "ダーク（暗い）")}${choice("theme", "system", th, "スマホ・PCの設定に合わせる")}</div></div>
+  <div class="setgrp"><h3>文字の大きさ</h3><div class="chips wrapchips">${choice("fontsize", "normal", fs, "標準")}${choice("fontsize", "large", fs, "大きめ")}</div></div>
+  <div class="setgrp"><h3>表示</h3><div class="chips wrapchips">${choice("view", "auto", vm, "自動（画面の幅で切り替え）")}${choice("view", "pc", vm, "いつもPC表示")}${choice("view", "sp", vm, "いつもスマホ表示")}</div></div>`;
+}
+// 設定のボタン。変えたら "pref:change" を出すので、各画面は描き直す
+if (typeof document !== "undefined") document.addEventListener("click", e => {
+  const t = e.target.closest('[data-act="pref"]'); if (!t) return;
+  const { k, v } = t.dataset;
+  if (k === "view") setViewMode(v); else setPref(k, v);
+  applyLook();
+  document.dispatchEvent(new CustomEvent("pref:change", { detail: { k, v } }));
+});

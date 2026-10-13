@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, applyView, lookSettingsHtml, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -33,7 +33,9 @@ function renderLogin(msg = "") {
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password"></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}<button class="btn primary full" data-act="login">ログイン</button></form></div></section>`;
 }
-onViewChange(render, shown);
+// PC表示かどうかは指導員の画面全体で決める（教習生の管理が見えている時だけ描き直す）
+onViewChange(() => { if (shown()) render(); });
+document.addEventListener("pref:change", () => { if (shown()) render(); });
 // 指導員の画面で「教習生の管理」を開いた時に、最新の内容で描き直す
 document.addEventListener("mng:open", () => { applyView(); if (S.uid) loadAll(); });
 let loginMsg = "";   // ログアウトさせた理由（ログアウト時の描き直しで消えないように取っておく）
@@ -69,10 +71,10 @@ function render() {
   if (!S.uid) return;
   if (isPC()) return renderPC();
   let h = `<div class="topbar noprint"><div><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small></div>
-    <span>${S.isInst ? `<button class="linkbtn" data-act="view" data-v="assign">割り当てに戻る</button>` : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
+    <span>${S.isInst ? "" : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
   ${tabs().length < 2 ? "" : `<div class="seg noprint" role="group" style="grid-template-columns:repeat(${tabs().length},1fr)">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</div>`}`;
   h += S.tab === "instructors" ? renderInstructors() : S.tab === "settings" ? renderSettings() : renderStudents();
-  root.innerHTML = h + `<p class="center noprint">${viewToggle()}</p>`;
+  root.innerHTML = h + (S.isAdmin ? `<p class="center noprint">${viewToggle()}</p>` : "");
 }
 const who = () => S.isAdmin ? `${CFG.schoolName}・管理者` : `${S.me ? S.me.name : ""} 指導員の担当（${S.students.length}人）`;
 const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(toKatakana(f)) || String(s.studentNo).includes(f) || String(s.license || "").includes(f) || (S.isAdmin && iname(s.instructorUid).includes(f));
@@ -98,6 +100,8 @@ const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); ret
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
+  // 指導員の画面では、左端のタブ（画面の切り替え）は指導員の画面のものを使う
+  if (S.isInst) { root.innerHTML = `<main class="pcmain"><div class="noprint">${main}</div><div id="printArea"></div></main>`; return; }
   root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small>
     <nav class="pcnav">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}${S.isInst ? `<button data-act="view" data-v="assign">予約の割り当てへ</button>` : ""}</nav>
     <div class="foot">${viewToggle()}${S.isAdmin ? `<button class="linkbtn" data-act="logout">ログアウト</button>` : ""}</div></aside>
@@ -153,7 +157,8 @@ function renderSettings() {
     ["日没が早い期間", dk.from ? `${fmt(dk.from)}〜${fmt(dk.to)}（警告：高速 ${(dk.sets || []).map(x => x.join("・")).join("／")}、単独高速 ${(dk.hwSoloSets || []).map(x => x.join("・")).join("／")}／不可：単独高速 ${(dk.hwSoloNo || []).map(x => x.join("・")).join("／")}）` : "なし"],
     ["時限", CFG.periods.slice(1).map((p, i) => `${i + 1}限 ${p[0]}〜${p[1]}`).join("、")]
   ];
-  return `<section class="panel"><div class="body"><div class="banner info">いまの設定です。変更したい時は、設定ファイル（js/config.js）を書き換えます。</div>
+  return `<section class="panel"><div class="body setpage"><h3 style="margin-top:0">この端末の表示</h3>${lookSettingsHtml()}</div></section>
+  <section class="panel"><div class="body"><h3 style="margin-top:0">学園のルール</h3><div class="banner info">いまの設定です。変更したい時は、設定ファイル（js/config.js）を書き換えます。</div>
   <div class="list">${rows.map(([k, v]) => `<div class="item" style="display:block"><div class="s">${esc(k)}</div><div class="t">${esc(v)}</div></div>`).join("")}</div></div></section>`;
 }
 

@@ -35,7 +35,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
 （リポジトリ直下 ＝ GitHub Pages で公開する中身。もとは web/ フォルダだった）
   index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）
-  instructor.html          指導員の画面（ログイン必須。**指導員がログインするのはここだけ**）。「予約の割り当て」と「教習生の管理」（自分の担当の教習生の登録・編集・削除・QR。新規登録・再発行の直後と編集画面の「QRコードを表示する」で、その人のQRを大きく出す＝その場で読み取ってもらう）を上のボタンで切り替える。教習生の管理は js/admin.js を data-mode="staff" で #mng に描く（#manage で直接開く）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
+  instructor.html          指導員の画面（ログイン必須。**指導員がログインするのはここだけ**）。ログイン中は切り替えタブ（#tabnav）をいつも出す：スマホは画面の下、PCは左端に「教習生の管理」「予約の管理」「設定」（instructor.js の showView / renderNav / renderSettings。#manage・#settings で直接開く）。PCで開くと予約の管理もPC表示（左にマス目、右に集計・お知らせ・一覧）。設定は端末ごと（localStorage の timetable_theme・fontsize・view・startweek・startmode・balopen。見た目の部分は common.js の lookSettingsHtml を管理画面と共通で使い、boot.js が描く前に反映）。「予約の割り当て」と「教習生の管理」（自分の担当の教習生の登録・編集・削除・QR。新規登録・再発行の直後と編集画面の「QRコードを表示する」で、その人のQRを大きく出す＝その場で読み取ってもらう）を上のボタンで切り替える。教習生の管理は js/admin.js を data-mode="staff" で #mng に描く（#manage で直接開く）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
   admin.html               大元の管理画面。**ログインするのは管理者（依頼者）だけ**。指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定。指導員がログインしようとしても入れない
   manage.html              旧「教習生の管理」。instructor.html#manage へ転送するだけ
   guide-student.html       教習生用の使い方（実際の画面に番号付きの注釈）。教習生画面の上の「使い方」から開く
@@ -44,7 +44,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
   manifest-staff.json
-  css/app.css              色はCSS変数（ライト/ダーク対応）。フォントは BIZ UDPGothic
+  css/app.css              色はCSS変数。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
   js/boot.js               「読み込み中…」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）

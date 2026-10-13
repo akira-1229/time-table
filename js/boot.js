@@ -1,6 +1,12 @@
 // 画面が「読み込み中…」のまま止まった時の案内（古いブラウザでも動くように classic script・古い書き方で書く）
 // 画面のプログラムが読み込めない／途中で止まった時に、理由と対処を表示する
 (function () {
+  // 設定の「画面の明るさ」「文字の大きさ」を、画面を描く前に反映する（ちらつかないように）
+  try {
+    var th = localStorage.getItem("timetable_theme"), fs = localStorage.getItem("timetable_fontsize");
+    if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th);
+    if (fs === "large") document.documentElement.setAttribute("data-fs", "large");
+  } catch (e) { }
   var errs = [];
   self.__boot = [];                                          // どこまで進んだかの印（各画面のプログラムが足していく）
   window.addEventListener("error", function (e) {

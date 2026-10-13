@@ -1,26 +1,34 @@
 
+/* 色：ライト＝背景が白の明るい画面、ダーク＝背景が黒の落ち着いた画面。
+   設定で選ぶと <html data-theme="light|dark">、選んでいない時はスマホ・PCの設定に合わせる */
 :root{
-  --bg:#F4F6F8; --surface:#FFFFFF; --ink:#1F2A37; --muted:#4B5563; --line:#D5DAE0;
+  --page:#FFFFFF; --bg:#F2F4F7; --surface:#FFFFFF; --ink:#1F2A37; --muted:#4B5563; --line:#DDE2E8;
   --blue:#1F6FB2; --blue-soft:#E3EEF8; --orange:#C46A12; --orange-soft:#FDEEDD;
   --green:#1E7A4F; --green-soft:#E1F3EA; --lock:#7A4A12; --lv1:#2E8B57; --lv1-soft:#E3F4EA; --lv2:#C99A06; --lv2-soft:#FDF5D6; --lv3:#D0453A; --lv3-soft:#FBE4E2;
+  --nav:#FFFFFF; --shadow:0 1px 3px rgba(16,24,40,.08);
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#12171D; --surface:#1B222B; --ink:#E8ECF1; --muted:#A7B0BB; --line:#334050;
-    --blue:#6AAAE4; --blue-soft:#1C3247; --orange:#F0A35A; --orange-soft:#3A2814;
-    --green:#5CC596; --green-soft:#173327; --lock:#F0C38A; --lv1:#4CC283; --lv1-soft:#163325; --lv2:#E5C04A; --lv2-soft:#3A3212; --lv3:#F07468; --lv3-soft:#3D1D1A;
+    --page:#000000; --bg:#161616; --surface:#0D0D0D; --ink:#ECECEC; --muted:#9C9C9C; --line:#2A2A2A;
+    --blue:#82B4E6; --blue-soft:#14222F; --orange:#E2A061; --orange-soft:#2B1E12;
+    --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614;
+    --nav:#0A0A0A; --shadow:none; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#12171D; --surface:#1B222B; --ink:#E8ECF1; --muted:#A7B0BB; --line:#334050;
-  --blue:#6AAAE4; --blue-soft:#1C3247; --orange:#F0A35A; --orange-soft:#3A2814;
-  --green:#5CC596; --green-soft:#173327; --lock:#F0C38A; --lv1:#4CC283; --lv1-soft:#163325; --lv2:#E5C04A; --lv2-soft:#3A3212; --lv3:#F07468; --lv3-soft:#3D1D1A;
+  --page:#000000; --bg:#161616; --surface:#0D0D0D; --ink:#ECECEC; --muted:#9C9C9C; --line:#2A2A2A;
+  --blue:#82B4E6; --blue-soft:#14222F; --orange:#E2A061; --orange-soft:#2B1E12;
+  --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614;
+  --nav:#0A0A0A; --shadow:none; color-scheme:dark;
 }
+:root[data-theme="light"]{color-scheme:light}
+/* 文字の大きさ「大きめ」 */
+:root[data-fs="large"] body{zoom:1.12}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:'BIZ UDPGothic','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-size:15px;line-height:1.5}
+body{margin:0;background:var(--page);color:var(--ink);font-family:'BIZ UDPGothic','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-size:15px;line-height:1.5}
 button{font:inherit;color:inherit;cursor:pointer}
 button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
 .wrap{max-width:480px;margin:0 auto;padding:12px 14px 40px}
@@ -217,3 +225,44 @@ body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}
 .balrow .fr{font-size:11px;color:var(--muted);white-space:nowrap}
 .balrow.low{background:var(--orange-soft)}.balrow.low .bar i{background:var(--orange)}
 .balrow.zero{background:var(--lv3-soft)}.balrow.zero .n b{color:var(--lv3)}
+
+/* ---------- 画面の切り替えタブ（指導員の画面）：スマホは画面の下、PCは左端。ログイン中はいつも出す ---------- */
+.tabnav{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--nav);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabnav .tn-head,.tabnav .tn-foot{display:none}
+.tn-tabs{display:grid;grid-template-columns:repeat(3,1fr);max-width:560px;margin:0 auto}
+.tn-tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px 6px;min-height:58px;font-size:12px;font-weight:700;color:var(--muted)}
+.tn-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tn-tabs button[aria-selected="true"]{color:var(--blue)}
+.tn-tabs button[aria-selected="true"] svg{stroke-width:2.2}
+body.shell{padding-bottom:calc(66px + env(safe-area-inset-bottom,0px))}
+body.shell .toast{bottom:calc(78px + env(safe-area-inset-bottom,0px))}
+body.pc.shell{padding-bottom:0}
+body.pc.shell .toast{bottom:18px}
+body.pc .tabnav{top:0;bottom:0;right:auto;width:220px;border-top:0;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px;padding-top:calc(18px + env(safe-area-inset-top,0px))}
+body.pc .tabnav[hidden]{display:none}
+body.pc .tabnav .tn-head{display:block;padding:0 8px 16px}
+body.pc .tn-head b{display:block;font-size:16px}
+body.pc .tn-head small{color:var(--muted);font-size:12px}
+body.pc .tn-tabs{display:flex;flex-direction:column;gap:4px;max-width:none;margin:0}
+body.pc .tn-tabs button{flex-direction:row;justify-content:flex-start;gap:10px;min-height:44px;padding:10px 12px;border-radius:10px;font-size:15px;color:var(--ink)}
+body.pc .tn-tabs button:hover{background:var(--bg)}
+body.pc .tn-tabs button[aria-selected="true"]{background:var(--blue-soft);color:var(--blue)}
+body.pc .tn-tabs svg{width:20px;height:20px}
+body.pc .tabnav .tn-foot{display:flex;flex-direction:column;align-items:flex-start;margin-top:auto}
+body.pc.shell #appWrap,body.pc.shell #mngWrap,body.pc.shell #setWrap{margin-left:220px}
+/* 予約の管理（PC表示）：左にマス目、右に集計・お知らせ・一覧 */
+body.pc #appWrap{max-width:1280px;padding:20px 28px 40px}
+body.pc.shell #appWrap{margin-right:auto}
+.asg{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.asg-side{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;min-width:0}
+body.pc .wc{height:52px;font-size:13px}
+body.pc .wk th.pl{width:64px}
+body.pc .wk{font-size:13px}
+body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
+/* 設定 */
+.setpage .setgrp+.setgrp{border-top:1px solid var(--line);margin-top:14px;padding-top:4px}
+.setpage h3{margin-top:12px}
+.setlabel{font-size:13px;font-weight:700;margin:10px 0 6px}
+.setnote{font-size:12px;color:var(--muted);margin:8px 0 0}
+.chips.wrapchips{flex-wrap:wrap;overflow:visible}
+.tel{font-variant-numeric:tabular-nums;user-select:all}
