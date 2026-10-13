@@ -100,6 +100,8 @@ export function expiriesOf(st, within = CFG.expiryWarnDays || 30) {
 }
 export const expiryText = e => `${e.label} ${md(e.date)}（${e.days < 0 ? `${-e.days}日過ぎています` : e.days === 0 ? "今日まで" : `あと${e.days}日`}）`;
 // フリガナ：ひらがなはカタカナに直す。カタカナ・長音・空白・中点だけを受け付ける
+// 全角の数字を半角に（教習生番号など）
+export const toHalfDigits = s => String(s || "").replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).trim();
 export const toKatakana = s => String(s || "").replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)).replace(/\s+/g, " ").trim();
 export const isKatakana = s => /^[\u30A1-\u30FA\u30FC\u30FB 　]+$/.test(s);
 
@@ -241,7 +243,12 @@ export function pcTable(cols, rows, sort) {
   const sorted = [...rows];
   if (sort && sort.k) {
     const c = cols.find(x => x.k === sort.k), val = r => c.sort ? c.sort(r) : (c.v ? c.v(r) : r[c.k]);
-    sorted.sort((a, b) => { const x = val(a) ?? "", y = val(b) ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "ja")) * (sort.dir || 1); });
+    const empty = v => v === null || v === undefined || v === "";
+    sorted.sort((a, b) => {
+      const x = val(a), y = val(b);
+      if (empty(x) || empty(y)) return empty(x) - empty(y);      // 空の値は、昇順でも降順でも最後
+      return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "ja")) * (sort.dir || 1);
+    });
   }
   return `<div class="pctable"><table class="adm"><thead><tr>${cols.map(c => `<th>${c.k && c.nosort !== true ? `<button class="th" data-act="sort" data-k="${c.k}">${c.t}${sort && sort.k === c.k ? (sort.dir > 0 ? " ▲" : " ▼") : ""}</button>` : c.t}</th>`).join("")}</tr></thead>
   <tbody>${sorted.map(r => `<tr>${cols.map(c => `<td>${c.html ? c.html(r) : esc(c.v ? c.v(r) : r[c.k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;

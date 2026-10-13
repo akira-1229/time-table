@@ -60,7 +60,7 @@ apps-script/appsscript.json
 SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
 ```
 
-管理画面（admin.html と、指導員の画面の「教習生の管理」）は **PC表示とスマホ表示** がある。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
+管理画面（admin.html と、指導員の画面の「教習生の管理」）は **PC表示とスマホ表示** がある。並べ替え：スマホは一覧の上の「並べ替え」（教習生番号・名前（フリガナ）・検定日・教習開始日の各昇順／降順。日付は今日に近い順／遠い順。空の値はいつも最後。検定日は管理者には出さない）、PCは見出しを押す。幅1024px以上で自動的にPC表示（左にメニュー、全項目の表・見出しで並べ替え、編集は右から出るパネル）。画面下／左下のボタンで切り替えると、その端末に覚える（`common.js` の `isPC`・`onViewChange`・`pcTable`）。
 
 画面のコードの書き方：状態はモジュール内の `S` オブジェクト、`render()` で `innerHTML` を丸ごと描き直し、クリックは `data-act` 属性のイベント委譲。画面の文言は丁寧語（です・ます）。
 
@@ -70,7 +70,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, `gender`, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, `gender`, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |

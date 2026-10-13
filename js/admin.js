@@ -7,14 +7,14 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
 const MODE = document.body.dataset.mode === "staff" ? "staff" : "admin";
 const root = document.getElementById(MODE === "staff" ? "mng" : "app");
 const shown = () => MODE === "admin" || !document.getElementById("mngWrap").hidden;
-const S = { uid: null, me: null, isAdmin: false, isInst: false, tab: "students", instructors: [], students: [], sel: new Set(), filter: "", sort: { k: "studentNo", dir: 1 } };
+const S = { uid: null, me: null, isAdmin: false, isInst: false, tab: "students", instructors: [], students: [], sel: new Set(), filter: "", msort: "no1", sort: { k: "studentNo", dir: 1 } };
 
 function newToken() {
   const b = crypto.getRandomValues(new Uint8Array(18));
@@ -72,6 +72,19 @@ const who = () => S.isAdmin ? `${CFG.schoolName}・管理者` : `${S.me ? S.me.n
 const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(toKatakana(f)) || String(s.studentNo).includes(f) || String(s.license || "").includes(f) || (S.isAdmin && iname(s.instructorUid).includes(f));
 const assignSelect = s => `<select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select>`;
 const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => match(s, f)); };
+// 並べ替え。日付は「今日からの近さ」で比べる（近い順＝今日に近いものから）。空のものはいつも最後
+const kenteiOf = s => { const m = mikiwameOf(s); return m && m.passed ? m.kenteiDate || null : null; };
+const distOf = d => d ? Math.abs(parseDate(d) - today()) : null;
+const SORTS = [
+  ["no1", "教習生番号（小さい順）", s => s.studentNo || null, 1], ["no-1", "教習生番号（大きい順）", s => s.studentNo || null, -1],
+  ["kana1", "名前（アイウエオ順）", s => s.nameKana || s.name || null, 1], ["kana-1", "名前（逆順）", s => s.nameKana || s.name || null, -1],
+  ["kentei1", "検定日が近い順", s => distOf(kenteiOf(s)), 1, true], ["kentei-1", "検定日が遠い順", s => distOf(kenteiOf(s)), -1, true],
+  ["start1", "教習開始日が近い順", s => distOf(s.startDate), 1], ["start-1", "教習開始日が遠い順", s => distOf(s.startDate), -1]
+];
+const sortList = list => {
+  const o = SORTS.find(x => x[0] === S.msort) || SORTS[0], [, , f, dir] = o, empty = v => v === null || v === undefined || v === "";
+  return [...list].sort((a, b) => { const x = f(a), y = f(b); if (empty(x) || empty(y)) return empty(x) - empty(y); return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "ja")) * dir; });
+};
 // みきわめの状況（今の段階）。合格なら検定日（未確定もある）
 const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
 // 期限が近い・過ぎた日付は赤で出す
@@ -92,8 +105,8 @@ function renderStudentsPC() {
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
-    ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => { const m = mikiwameOf(s); return !m ? "3" : !m.passed ? "2" : m.kenteiDate || "1"; } }]),
-    { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
+    ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => distOf(kenteiOf(s)) }]),
+    { k: "startDate", t: "教習開始", sort: s => distOf(s.startDate) }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
     { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
     ...(S.isAdmin ? [{ k: "inst", t: "担当", html: assignSelect, sort: s => iname(s.instructorUid) }] : []),
@@ -107,10 +120,11 @@ function renderStudentsPC() {
 
 function renderStudents() {
   const f = S.filter.trim();
-  const list = S.students.filter(s => match(s, f));
+  const list = sortList(S.students.filter(s => match(s, f)));
   let h = `<section class="panel noprint"><div class="body">
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
-  <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号${S.isAdmin ? "・担当" : ""}）</label><input id="flt" value="${esc(S.filter)}"></div>
+  <div class="row" style="margin-top:10px"><div class="field"><label for="flt">絞り込み（名前・番号${S.isAdmin ? "・担当" : ""}）</label><input id="flt" value="${esc(S.filter)}"></div>
+  <div class="field"><label for="msort">並べ替え</label><select id="msort">${SORTS.filter(x => !(x[4] && S.isAdmin)).map(([k, t]) => `<option value="${k}" ${S.msort === k ? "selected" : ""}>${t}</option>`).join("")}</select></div></div>
   <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th>${S.isAdmin ? "<th>担当</th>" : ""}<th></th></tr></thead><tbody>`;
   list.forEach(s => {
     h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
@@ -198,7 +212,7 @@ function editSheet(s) {
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
   <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田 太郎"></div>
   <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ タロウ"></div></div>
-  <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off"></div>
+  <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off" inputmode="numeric" maxlength="4" placeholder="数字4桁（例：0123）"></div>
   ${S.isAdmin ? `<div class="field"><label for="f_in">担当指導員<span style="color:var(--lv3)">＊必須</span></label><select id="f_in">${opt("", s.instructorUid || (S.isInst ? S.uid : ""), "選んでください")}${S.instructors.map(i => opt(i.uid, s.instructorUid || (S.isInst ? S.uid : ""), i.name)).join("")}</select></div>` : "<div></div>"}</div>
   <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
   <div class="field"><label for="f_sx">性別</label><select id="f_sx">${opt("", s.gender, "選んでください")}${opt("男", s.gender)}${opt("女", s.gender)}</select></div></div>
@@ -256,6 +270,7 @@ document.addEventListener("input", e => {
   if (e.target.id === "f_birth") { const el = document.getElementById("f_age"); if (el) el.textContent = e.target.value ? `今日時点で ${ageText(e.target.value)}` : ""; return; }
   if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
 document.addEventListener("change", async e => {
+  if (e.target.id === "msort") { S.msort = e.target.value; render(); return; }
   if (e.target.dataset.act !== "reassign") return;
   const s = S.students.find(x => x.token === e.target.dataset.s), uid = e.target.value;
   if (!uid || !confirm(`${s.name}さんの担当を${iname(uid)}さんに変えます。すでに入っている予約は、前の担当のまま残ります。よろしいですか？`)) { render(); return; }
@@ -287,10 +302,11 @@ document.addEventListener("click", async e => {
       const v = id => document.getElementById(id).value.trim();
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
-        studentNo: v("f_no"), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
+        studentNo: toHalfDigits(v("f_no")), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
         birthDate: v("f_birth") || null, gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
       DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
+      if (data.studentNo && !/^\d{4}$/.test(data.studentNo)) return toast("教習生番号は数字4桁で入れてください（例：0123）");
       if (!data.name) return toast("名前（漢字）を入れてください");
       if (!data.nameKana) return toast("フリガナを入れてください");
       if (!data.instructorUid) return toast("担当指導員を選んでください");

@@ -3,7 +3,7 @@
 // ・見本データ入り。このブラウザの中だけに保存される（他の端末とは共有されない）
 // ・config.js の demo を false にすると使われなくなる
 // =============================================================
-const KEY = "timetable_demo_db_v4";
+const KEY = "timetable_demo_db_v5";
 const SKEY = "timetable_demo_user";
 
 export class Timestamp {
@@ -47,7 +47,7 @@ function seed() {
   DEMO_STUDENTS.forEach((st, i) => {
     const dl = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30 + i * 25);
     DB.set(`students/${st.tok}`, {
-      studentNo: `${pad(i + 1)}`, name: st.name, nameKana: st.kana, stage: st.stage, instructorUid: st.instructorUid,
+      studentNo: String(i + 1).padStart(4, "0"), name: st.name, nameKana: st.kana, stage: st.stage, instructorUid: st.instructorUid,
       deadline: `${dl.getFullYear()}-${pad(dl.getMonth() + 1)}-${pad(dl.getDate())}`, active: true
     });
     const evening = i % 2 === 1;           // 平日は夕方以降しか来られない人
