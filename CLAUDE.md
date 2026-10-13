@@ -49,7 +49,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
   js/boot.js               「読み込み中…」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
   js/demo-db.js            デモ用の仮DB（Firestore/Auth風のAPI。localStorageに保存。見本データ入り）
-  js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
+  js/common.js             初期化（admin.html だけ Firebase のアプリ名を "admin" にして、ログインの保存場所を指導員の画面と分ける。同じブラウザで別アカウントを使うと、役割違いの signOut で互いにログアウトさせていたため）、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
   js/instructor.js         指導員画面（ルール判定の本体）
   js/admin.js              大元の管理画面と、指導員の画面に組み込んだ「教習生の管理」の両方（body の data-mode で切り替え）

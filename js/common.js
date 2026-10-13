@@ -6,7 +6,9 @@ import { getMessaging, getToken, isSupported, onMessage } from "./backend.js";
 export { DEMO, DEMO_USERS, DEMO_STUDENTS, resetDemo } from "./backend.js";
 import { DEMO } from "./backend.js";
 export const CFG = self.APP_CONFIG;
-export const app = initializeApp(CFG.firebase);
+// 大元の管理画面は、ログインの保存場所を指導員の画面と分ける（Firebase のアプリ名を変える）。
+// 同じブラウザで管理画面と指導員の画面を別のアカウントで開いても、片方がもう片方をログアウトさせないため
+export const app = document.body && document.body.dataset.mode === "admin" ? initializeApp(CFG.firebase, "admin") : initializeApp(CFG.firebase);
 export const db = getFirestore(app);
 self.__boot && self.__boot.push("common");
 export const WD = ["日", "月", "火", "水", "木", "金", "土"];
