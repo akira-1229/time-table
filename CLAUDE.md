@@ -44,7 +44,8 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   manifest-staff.json
   css/app.css              色はCSS変数（ライト/ダーク対応）。フォントは BIZ UDPGothic
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
-  js/backend.js            本番Firebaseとデモ用DBの切り替え（top-level await で動的import）
+  js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
+  js/boot.js               「読み込み中…」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
   js/demo-db.js            デモ用の仮DB（Firestore/Auth風のAPI。localStorageに保存。見本データ入り）
   js/common.js             初期化、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面

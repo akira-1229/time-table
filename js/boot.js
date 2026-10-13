@@ -2,6 +2,7 @@
 // 画面のプログラムが読み込めない／途中で止まった時に、理由と対処を表示する
 (function () {
   var errs = [];
+  self.__boot = [];                                          // どこまで進んだかの印（各画面のプログラムが足していく）
   window.addEventListener("error", function (e) {
     var t = e.target;
     errs.push(t && t !== window && (t.src || t.href) ? "読み込み失敗: " + (t.src || t.href) : (e.message || "エラー"));
@@ -18,7 +19,7 @@
         : '<p>電波の良い所で「もう一度読み込む」を押してください。直らない時は、スマホのOS（iOS・Android）とブラウザを最新にしてください。</p>')
       + '<p><button class="btn full" onclick="location.reload()">もう一度読み込む</button></p>'
       + '<details><summary>くわしい情報（事務所に伝える用）</summary><pre style="white-space:pre-wrap;font-size:12px">'
-      + esc((errs.length ? errs.join("\n") : "エラー表示なし（時間切れ）") + "\n" + ua) + '</pre></details></div></section>';
+      + esc((errs.length ? errs.join("\n") : "エラー表示なし（時間切れ）") + "\n進み具合: " + (self.__boot.join(" → ") || "なし") + "\n" + ua) + '</pre></details></div></section>';
     var app = document.getElementById("app"); if (app) app.innerHTML = h;
   }, 15000);
 })();

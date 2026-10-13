@@ -255,4 +255,5 @@ document.addEventListener("click", async e => {
   }
 });
 
+self.__boot && self.__boot.push("student");
 load();

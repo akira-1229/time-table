@@ -10,6 +10,7 @@ import {
 import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
+self.__boot && self.__boot.push("admin");
 const MODE = document.body.dataset.mode === "staff" ? "staff" : "admin";
 const root = document.getElementById(MODE === "staff" ? "mng" : "app");
 const shown = () => MODE === "admin" || !document.getElementById("mngWrap").hidden;
@@ -36,6 +37,7 @@ onViewChange(render, shown);
 // 指導員の画面で「教習生の管理」を開いた時に、最新の内容で描き直す
 document.addEventListener("mng:open", () => { applyView(); if (S.uid) loadAll(); });
 onAuthStateChanged(auth, async user => {
+  self.__boot && self.__boot.push("admin:ログイン確認");
   if (!user) { S.uid = null; MODE === "staff" ? gate("ログインしてください。") : renderLogin(); return; }
   S.uid = user.uid; S.tab = "students"; S.sel = new Set(); S.filter = "";
   try {

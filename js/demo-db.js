@@ -62,7 +62,7 @@ function seed() {
     });
   });
 }
-if (!restore()) { seed(); persist(); }
+if (self.APP_CONFIG.demo === true && !restore()) { seed(); persist(); }
 
 /* ---------- Firestoreのまね ---------- */
 const P = s => s.join("/");

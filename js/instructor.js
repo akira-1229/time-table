@@ -10,6 +10,7 @@ import {
   installButton, firstVisitInstall, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
+self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
   uid: null, me: null, week: addDays(mondayOf(today()), 7), mode: "slot", pick: null, ptype: null,
@@ -34,6 +35,7 @@ function renderLogin(msg = "") {
 }
 firstVisitInstall("staff");
 onAuthStateChanged(auth, async user => {
+  self.__boot && self.__boot.push("instructor:ログイン確認");
   if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; renderLogin(); return; }
   S.uid = user.uid;
   try {

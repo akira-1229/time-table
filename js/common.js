@@ -8,6 +8,7 @@ import { DEMO } from "./backend.js";
 export const CFG = self.APP_CONFIG;
 export const app = initializeApp(CFG.firebase);
 export const db = getFirestore(app);
+self.__boot && self.__boot.push("common");
 export const WD = ["日", "月", "火", "水", "木", "金", "土"];
 export const P = CFG.periods;
 
