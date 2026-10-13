@@ -7,14 +7,14 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
   uid: null, me: null, week: addDays(mondayOf(today()), 7), mode: "slot", pick: null, ptype: null,
-  students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false
+  students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
 };
 const wid = () => dateStr(S.week);
 const days = () => { const r = []; for (let i = 0; i < 7; i++) { const d = addDays(S.week, i); if (CFG.openDays.includes(d.getDay())) r.push(dateStr(d)); } return r; };
@@ -34,20 +34,30 @@ function renderLogin(msg = "") {
   const e = new URLSearchParams(location.search).get("e"); if (e && !document.getElementById("em").value) document.getElementById("em").value = e;
 }
 firstVisitInstall("staff");
+// ログアウトさせた理由（signOut の後に呼ばれる「ログアウト時の描き直し」で消えないように取っておく）
+let loginMsg = "";
 onAuthStateChanged(auth, async user => {
   self.__boot && self.__boot.push("instructor:ログイン確認");
-  if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; renderLogin(); return; }
+  if (!user) { stopWatch(); stopCancelWatch(); S.uid = null; renderLogin(loginMsg); loginMsg = ""; return; }
   S.uid = user.uid;
   try {
     const me = await getDoc(doc(db, "instructors", user.uid));
-    if (!me.exists()) { await signOut(auth); renderLogin("指導員として登録されていません。事務所に確認してください。"); return; }
+    if (!me.exists()) { loginMsg = `指導員として登録されていません。事務所に確認してください。（このアカウントのユーザーUID：${user.uid}）`; await signOut(auth); return; }
     S.me = me.data();
     listenForeground(() => loadWeek());
     watchCancelReqs();
     await loadWeek();
     if (location.hash === "#manage") showView("manage");
-  } catch (e) { renderLogin(friendlyError(e)); }
+  } catch (e) {
+    // ログインはできているので、ログイン画面には戻さず、理由とやり直しのボタンを出す
+    noteIndex(e);
+    root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(friendlyError(e))}</div>${indexBanner()}
+      <div class="list"><button class="btn primary full" data-act="retry">もう一度読み込む</button><button class="btn full" data-act="logout">ログアウト</button></div></div></section>`;
+  }
 });
+// 索引が無い時は「索引を作る」リンクを画面に出す（管理者がPCで押すと作られる。数分かかる）
+function noteIndex(e) { const u = indexLinkOf(e); if (u) S.indexLinks.add(u); }
+const indexBanner = () => S.indexLinks.size ? `<div class="banner warn"><b>索引（検索用のデータ）がまだ作られていません。</b><br>管理者の方は、下のリンクを押して「インデックスを作成」してください。作成に数分かかります。終わったら画面を読み込み直してください。${[...S.indexLinks].map((u, i) => `<br><a href="${esc(u)}" target="_blank" rel="noopener">索引を作る（${i + 1}）</a>`).join("")}</div>` : "";
 
 /* ---------- 読み込み ---------- */
 async function loadWeek() {
@@ -66,7 +76,7 @@ async function loadWeek() {
     // まだ実施チェックの済んでいない予約（週をまたいで全部）。何時限目かの計算と、実施チェックに使う
     const pq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("result", "==", null), where("status", "in", ["draft", "confirmed"]));
     S.pending = (await getDocs(pq)).docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() }));
-  } catch (e) { toast(friendlyError(e)); }
+  } catch (e) { noteIndex(e); toast(friendlyError(e)); }
   S.loading = false; render();
 }
 
@@ -101,7 +111,7 @@ function watchCancelReqs() {
     const ids = new Set(S.cancelReqs.map(b => b.id));
     S.bookings.forEach(b => { b.cancelRequested = ids.has(b.id); });
     laterRender();
-  }, e => toast(friendlyError(e)));
+  }, e => { noteIndex(e); toast(friendlyError(e)); laterRender(); });
 }
 // 未確定の予約のうち、あとから教習生が◯を外した枠（締切前なら外せるため）
 const goneDraft = b => b.status === "draft" && !isFree(b.token, b.date, b.period);
@@ -249,6 +259,7 @@ function render() {
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
   h += `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
     ${S.confirmed ? '<span class="tag ok">確定済み</span>' : '<span class="tag draft">未確定</span>'}</div><div class="body">`;
+  h += indexBanner();
   const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
   if (unchecked.length) {
     h += `<div class="banner warn"><b>終わった教習のチェックが${unchecked.length}件あります</b><br><span style="font-size:12px">教習生が来たら「実施」、来なかったら「欠席」を押してください（欠席は教習生に通知されます）。</span>`;
@@ -593,6 +604,7 @@ document.addEventListener("click", async e => {
     else if (a === "logout") { showView("assign"); stopWatch(); stopCancelWatch(); await signOut(auth); }
     else if (a === "view") { showView(t.dataset.v); if (t.dataset.v === "assign" && S.uid) await loadWeek(); }
     else if (a === "reload") { await loadWeek(); }
+    else if (a === "retry") location.reload();
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
     else if (a === "balPick") { S.mode = "student"; S.pick = t.dataset.s; S.ptype = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }

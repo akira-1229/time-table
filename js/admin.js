@@ -36,19 +36,25 @@ function renderLogin(msg = "") {
 onViewChange(render, shown);
 // 指導員の画面で「教習生の管理」を開いた時に、最新の内容で描き直す
 document.addEventListener("mng:open", () => { applyView(); if (S.uid) loadAll(); });
+let loginMsg = "";   // ログアウトさせた理由（ログアウト時の描き直しで消えないように取っておく）
 onAuthStateChanged(auth, async user => {
   self.__boot && self.__boot.push("admin:ログイン確認");
-  if (!user) { S.uid = null; MODE === "staff" ? gate("ログインしてください。") : renderLogin(); return; }
+  if (!user) { S.uid = null; MODE === "staff" ? gate("ログインしてください。") : renderLogin(loginMsg); loginMsg = ""; return; }
   S.uid = user.uid; S.tab = "students"; S.sel = new Set(); S.filter = "";
   try {
     const [ad, me] = await Promise.all([getDoc(doc(db, "admins", user.uid)), getDoc(doc(db, "instructors", user.uid))]);
     S.me = me.exists() ? me.data() : null;
     // 大元の管理画面は管理者だけ、教習生の管理は指導員だけ（ページごとに役割を1つに決める）
     S.isAdmin = MODE === "admin" && ad.exists(); S.isInst = MODE === "staff" && me.exists();
-    if (MODE === "admin" && !S.isAdmin) { S.uid = null; await signOut(auth); renderLogin("この画面は管理者専用です。"); return; }
+    if (MODE === "admin" && !S.isAdmin) { S.uid = null; loginMsg = `この画面は管理者専用です。（このアカウントのユーザーUID：${user.uid}。管理者にするには、Firestore の admins に、このUIDと同じ名前のドキュメントを作ります）`; await signOut(auth); return; }
     if (MODE === "staff" && !S.isInst) { S.uid = null; gate("指導員として登録されていません。事務所に確認してください。"); return; }
     await loadAll();
-  } catch (e) { renderLogin(friendlyError(e)); }
+  } catch (e) {
+    if (MODE === "staff") return gate(friendlyError(e));
+    // ログインはできているので、ログイン画面には戻さず、理由とやり直しのボタンを出す
+    root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(friendlyError(e))}</div>
+      <div class="list"><button class="btn primary full" data-act="retry">もう一度読み込む</button><button class="btn full" data-act="logout">ログアウト</button></div></div></section>`;
+  }
 });
 
 async function loadAll() {
@@ -288,6 +294,7 @@ document.addEventListener("click", async e => {
   try {
     if (a === "login") { try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); } }
     else if (a === "logout") await signOut(auth);
+    else if (a === "retry") location.reload();
     else if (a === "tab") { S.tab = t.dataset.v; S.sort = { k: t.dataset.v === "instructors" ? "name" : "studentNo", dir: 1 }; render(); }
     else if (a === "printInst") printInstructorCards();
     else if (a === "new") editSheet(null);

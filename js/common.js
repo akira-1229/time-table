@@ -126,6 +126,8 @@ export function onOverlayClose(e) {
   if (t && (e.target === t || t.tagName === "BUTTON")) { closeSheet(); return true; }
   return false;
 }
+// 索引が無い時のエラーに入っている「索引を作る」リンク（Firebaseコンソール）を取り出す
+export const indexLinkOf = e => { const m = String(e && e.message || "").match(/https:\/\/console\.firebase\.google\.com\S+/); return m ? m[0] : ""; };
 export function friendlyError(e) {
   console.error(e);
   const c = e && e.code || "";
