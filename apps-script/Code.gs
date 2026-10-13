@@ -1,7 +1,7 @@
 /**
  * 空き時間登録システム 通知係（Google Apps Script）
  *
- * ・processOutbox：5分おきに起動。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
+ * ・processOutbox：1分おきに起動（＋画面からウェブアプリとして呼ばれた時はすぐ）。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
@@ -25,7 +25,7 @@ const FS_BASE = () => `https://firestore.googleapis.com/v1/projects/${prop('PROJ
 /* ---------- 初回だけ実行：定期実行の設定 ---------- */
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('processOutbox').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('processOutbox').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('dailyReminder').timeBased().atHour(9).everyDays(1).inTimezone('Asia/Tokyo').create();
   Logger.log('定期実行を設定しました');
 }
@@ -118,9 +118,15 @@ function deliver_(docPath, tokens, title, body, link) {
 }
 
 /* ---------- 5分おき：送信待ちの通知を送る ---------- */
-function processOutbox() {
+// 画面から「すぐ送って」と呼ばれる入口（ウェブアプリとして公開する。SETUP.md 手順9-7）
+// 送信待ちを送るだけなので、誰が呼んでも送られるのは職員・本人が書いた通知だけ
+function doPost(e) { processOutbox(20000); return ContentService.createTextOutput('ok'); }
+function doGet(e) { processOutbox(20000); return ContentService.createTextOutput('ok'); }
+
+function processOutbox(wait) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return;
+  // ほかの送信が動いている時は終わるのを待つ（画面から呼ばれた時は最大20秒。定期実行は1秒）
+  if (!lock.tryLock(typeof wait === 'number' ? wait : 1000)) return;
   try {
     const items = query_({
       from: [{ collectionId: 'outbox' }],

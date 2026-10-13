@@ -24,7 +24,7 @@
 | 画面（教習生・指導員・管理） | 素のHTML/CSS/JS（ESモジュール、ビルドなし） | GitHub Pages（リポジトリ直下） |
 | データ | Cloud Firestore（東京リージョン予定） | `firestore.rules` / `firestore.indexes.json` |
 | ログイン | Firebase Authentication（メール/パスワード、職員のみ） | |
-| 通知の送信 | Google Apps Script（5分おき＋毎朝9時）→ FCM HTTP v1 | `apps-script/` |
+| 通知の送信 | Google Apps Script（1分おき＋毎朝9時。さらに画面が outbox を書いた直後に `config.js` の `sendNowUrl`＝ウェブアプリ（doPost）を呼んで、すぐ送る）→ FCM HTTP v1 | `apps-script/` |
 | 費用 | すべて無料枠（Firebase Spark。Cloud Functions は使わない＝Blaze不要） | |
 
 Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンドラは使っていない。この方針を変える時は依頼者に確認する。

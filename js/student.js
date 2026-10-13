@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
+  installButton, firstVisitInstall, sendNow, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -251,6 +251,7 @@ document.addEventListener("click", async e => {
         to: "instructor", type: "cancelRequest", studentToken: T, instructorUid: S.student.instructorUid,
         title: "キャンセル希望", body: `${S.student.name}さん ${label(b.date, b.period)}`, createdAt: serverTimestamp(), sent: false
       });
+      sendNow();
       b.cancelRequested = true; closeSheet(); render(); toast("キャンセル希望を送りました");
     } catch (err) { toast(friendlyError(err)); t.disabled = false; }
   }

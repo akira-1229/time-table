@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -426,6 +426,7 @@ function outboxData(tok, type, title, body) {
 }
 async function notifyStudent(tok, type, title, body) {
   await addDoc(collection(db, "outbox"), outboxData(tok, type, title, body));
+  sendNow();
   await updateDoc(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
   const s = ST(tok); if (s) s.lastNotifiedAt = Timestamp.now();
 }
@@ -522,6 +523,7 @@ async function markResult(ids, result, mk = null) {
     batch.update(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
   }
   await batch.commit();
+  if (result !== "done") sendNow();
   if (s) {
     if (result === "done") { s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (mk) s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; }
     else s.lastNotifiedAt = Timestamp.now();
@@ -582,6 +584,7 @@ async function confirmWeek() {
     batch.update(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
   });
   await batch.commit();
+  sendNow();
   drafts.forEach(b => b.status = "confirmed");
   S.pending.forEach(b => { if (drafts.some(d => d.id === b.id)) b.status = "confirmed"; });
   Object.keys(byStudent).forEach(tok => { const s = ST(tok); if (s) s.lastNotifiedAt = Timestamp.now(); });

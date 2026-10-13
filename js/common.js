@@ -130,6 +130,11 @@ export function onOverlayClose(e) {
 }
 // 索引が無い時のエラーに入っている「索引を作る」リンク（Firebaseコンソール）を取り出す
 export const indexLinkOf = e => { const m = String(e && e.message || "").match(/https:\/\/console\.firebase\.google\.com\S+/); return m ? m[0] : ""; };
+// 通知の送信待ち（outbox）を書いた直後に呼ぶ。Apps Script にすぐ送ってもらう（失敗しても1分おきの定期送信で届く）
+export function sendNow() {
+  if (DEMO || !CFG.sendNowUrl) return;
+  try { fetch(CFG.sendNowUrl, { method: "POST", mode: "no-cors", body: "send", keepalive: true }).catch(() => { }); } catch (e) { }
+}
 export function friendlyError(e) {
   console.error(e);
   const c = e && e.code || "";
