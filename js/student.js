@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn
+  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -62,18 +62,38 @@ function unacked() {
   return n && (!a || n.toMillis() > a.toMillis());
 }
 
-function render() {
-  const st = S.student;
-  let h = `<div class="topbar"><div><h1>${esc(CFG.schoolName)}</h1><small>${esc(st.name)} さん</small></div>
-    <span>${installButton()}<button class="linkbtn" data-act="push">通知の設定</button><a class="linkbtn" href="guide-student.html">使い方</a></span></div>
-  <section class="panel"><div class="tabs" role="tablist">
-    <button role="tab" aria-selected="${S.tab === "cal"}" data-act="tab" data-v="cal">空き時間</button>
-    <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約・進み具合${unacked() ? '<span class="dot">!</span>' : ""}</button>
-  </div><div class="body">`;
-  if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
-  h += S.tab === "cal" ? renderCal() : renderBook();
-  app.innerHTML = h + `</div></section>`;
+// 画面の下にいつも出すタブ：左「空き時間の登録」、真ん中「教習の進み具合」、右「設定」
+const TABS = [
+  ["cal", "空き時間の登録", '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8.5 15l2.3 2.3 4.7-4.6"/></svg>'],
+  ["book", "教習の進み具合", '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>'],
+  ["set", "設定", '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>']
+];
+function renderNav() {
+  const nav = document.getElementById("tabnav");
+  document.body.classList.add("shell"); nav.hidden = false;
+  nav.innerHTML = `<div class="tn-tabs" role="tablist">${TABS.map(([v, t, ic]) => `<button role="tab" aria-selected="${S.tab === v}" data-act="tab" data-v="${v}">${ic}<span>${t}${v === "book" && unacked() ? '<span class="dot">!</span>' : ""}</span></button>`).join("")}</div>`;
 }
+function render() {
+  const st = S.student, title = TABS.find(x => x[0] === S.tab)[1];
+  let h = `<div class="topbar"><div><h1>${title}</h1><small>${esc(CFG.schoolName)}・${esc(st.name)} さん</small></div></div>`;
+  if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
+  h += `<section class="panel"><div class="body${S.tab === "set" ? " setpage" : ""}">`;
+  h += S.tab === "cal" ? renderCal() : S.tab === "book" ? renderBook() : renderSet();
+  app.innerHTML = h + `</div></section>`;
+  renderNav();
+}
+// 設定：見た目（明るさ・文字の大きさ）、通知、ホーム画面に追加、困った時
+function renderSet() {
+  const st = S.student;
+  return `${lookSettingsHtml({ view: false })}
+  <div class="setgrp"><h3>通知・アプリ</h3><div class="list"><button class="btn primary full" data-act="push">通知の設定</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
+    <p class="setnote">予約が決まった時や変更があった時に、スマホに通知が届きます。${isIOS() ? "iPhoneは、ホーム画面に追加したアイコンから開いた時だけ通知を受け取れます。" : ""}</p></div>
+  <div class="setgrp"><h3>あなたの情報</h3><div class="item"><div><div class="t">${esc(st.name)} さん</div><div class="s">${st.studentNo ? `教習生番号 ${esc(st.studentNo)}・` : ""}第${st.stage}段階</div></div></div>
+    <p class="setnote">登録内容が違う時は、担当の指導員に伝えてください。</p></div>
+  <div class="setgrp"><h3>困った時は</h3><div class="list"><a class="btn full center" style="text-decoration:none" href="guide-student.html">使い方を見る</a><a class="btn full center" style="text-decoration:none" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a></div>
+    <p class="setnote">${esc(CFG.schoolName)}　電話 <span class="tel">${esc(CFG.schoolTel)}</span></p></div>`;
+}
+document.addEventListener("pref:change", () => { if (S.student) render(); });
 
 const lockedNote = () => CFG.noRemoveAfterDeadline
   ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
@@ -181,7 +201,7 @@ document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
   const t = e.target.closest("[data-act]"); if (!t) return;
   const a = t.dataset.act;
-  if (a === "tab") { S.tab = t.dataset.v; render(); }
+  if (a === "tab") { S.tab = t.dataset.v; render(); window.scrollTo(0, 0); }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const k = slotKey(+t.dataset.d, +t.dataset.p);

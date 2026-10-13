@@ -277,11 +277,11 @@ export function applyLook() {
 }
 // 設定画面の「見た目」の部分（管理画面と指導員の画面で共通）
 const choice = (k, v, cur, t) => `<button class="chip" aria-pressed="${cur === v}" data-act="pref" data-k="${k}" data-v="${v}">${t}</button>`;
-export function lookSettingsHtml() {
+export function lookSettingsHtml({ view = true } = {}) {
   const th = getPref("theme", "system"), fs = getPref("fontsize", "normal"), vm = getViewMode();
   return `<div class="setgrp"><h3>画面の明るさ</h3><div class="chips wrapchips">${choice("theme", "light", th, "ライト（明るい）")}${choice("theme", "dark", th, "ダーク（暗い）")}${choice("theme", "system", th, "スマホ・PCの設定に合わせる")}</div></div>
   <div class="setgrp"><h3>文字の大きさ</h3><div class="chips wrapchips">${choice("fontsize", "normal", fs, "標準")}${choice("fontsize", "large", fs, "大きめ")}</div></div>
-  <div class="setgrp"><h3>表示</h3><div class="chips wrapchips">${choice("view", "auto", vm, "自動（画面の幅で切り替え）")}${choice("view", "pc", vm, "いつもPC表示")}${choice("view", "sp", vm, "いつもスマホ表示")}</div></div>`;
+  ${view ? "" : "<!--"}<div class="setgrp"><h3>表示</h3><div class="chips wrapchips">${choice("view", "auto", vm, "自動（画面の幅で切り替え）")}${choice("view", "pc", vm, "いつもPC表示")}${choice("view", "sp", vm, "いつもスマホ表示")}</div></div>${view ? "" : "-->"}`;
 }
 // 設定のボタン。変えたら "pref:change" を出すので、各画面は描き直す
 if (typeof document !== "undefined") document.addEventListener("click", e => {
