@@ -24,7 +24,7 @@ self.APP_CONFIG = {
   appUrl: "https://akira-1229.github.io/time-table/",
 
   schoolName: "聖徳自動車学園",
-  schoolTel: "000-000-0000",        // キャンセル連絡用の電話番号
+  schoolTel: "058-387-4171",        // キャンセル連絡用の電話番号
 
   // 時限（開始〜終了）
   periods: [
@@ -71,7 +71,8 @@ self.APP_CONFIG = {
   darkSeason: {                     // 日没が早い期間は、この組み合わせを警告（強制で入れることは可能）
     from: "10-03", to: "02-15",     // 月-日（年をまたぐ指定もOK）
     sets: [[6, 7, 8]],
-    hwSoloSets: [[7, 8], [9, 10]]   // 単独高速は8限以降の組を警告（8・9 はそもそも入れられない）
+    hwSoloSets: [[7, 8]],           // 単独高速は 7・8 を警告（8・9 は季節に関係なく入れられない）
+    hwSoloNo: [[9, 10]]             // 単独高速の 9・10 はこの期間は入れられない（強制も不可）
   },
   maxFcmTokens: 5
 };

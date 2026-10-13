@@ -191,3 +191,6 @@ body.pc .sheet .list{max-height:none}
 .pcgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media print{.pcside,.pctool{display:none!important} .pcl{display:block}}
 body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}
+/* QRカード（印刷用）：スマホの幅では1列、PCや印刷では2列 */
+.qrcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+@media print{.qrcards{grid-template-columns:repeat(2,1fr)}}

@@ -127,7 +127,7 @@ function renderSettings() {
     ["1日の上限", Object.entries(CFG.dailyMax).map(([k, v]) => `第${k}段階 ${v}時限`).join("、")],
     ["最低教習時限", Object.entries(CFG.lessons || {}).map(([k, v]) => `第${k}段階 ${v.min}時限${v.kikenNo ? `（${v.kikenNo}時限目が${(CFG.kiken || {}).label}）` : ""}`).join("、")],
     ["高速教習の組", (CFG.highwaySets || []).map(x => x.join("・")).join("／")],
-    ["日没が早い期間", dk.from ? `${fmt(dk.from)}〜${fmt(dk.to)}（警告：高速 ${(dk.sets || []).map(x => x.join("・")).join("／")}、単独高速 ${(dk.hwSoloSets || []).map(x => x.join("・")).join("／")}）` : "なし"],
+    ["日没が早い期間", dk.from ? `${fmt(dk.from)}〜${fmt(dk.to)}（警告：高速 ${(dk.sets || []).map(x => x.join("・")).join("／")}、単独高速 ${(dk.hwSoloSets || []).map(x => x.join("・")).join("／")}／不可：単独高速 ${(dk.hwSoloNo || []).map(x => x.join("・")).join("／")}）` : "なし"],
     ["時限", CFG.periods.slice(1).map((p, i) => `${i + 1}限 ${p[0]}〜${p[1]}`).join("、")]
   ];
   return `<section class="panel"><div class="body"><div class="banner info">いまの設定です。変更したい時は、設定ファイル（js/config.js）を書き換えます。</div>
@@ -135,7 +135,7 @@ function renderSettings() {
 }
 
 function renderInstructors() {
-  let h = `<section class="panel"><div class="body">
+  let h = `<section class="panel noprint"><div class="body">
   <div class="banner info">指導員のログイン用アカウントは、Firebaseコンソールの Authentication →「ユーザーを追加」で作り、表示された「ユーザーUID」をここに登録します。</div>
   <div class="list">`;
   S.instructors.forEach(i => { h += `<div class="item"><div><div class="t">${esc(i.name)}</div><div class="s">${esc(i.email || "")}　UID: ${esc(i.uid)}</div><div class="s">${S.students.filter(s => s.instructorUid === i.uid).length}人担当</div></div><button class="btn" data-act="delInst" data-u="${esc(i.uid)}" style="color:var(--orange)">削除</button></div>`; });
@@ -167,7 +167,7 @@ function renderInstructorsPC() {
 function printInstructorCards() {
   const area = document.getElementById("printArea");
   area.innerHTML = `<div class="noprint banner info" style="margin-top:12px">カードを確認して、印刷画面から印刷してください。<button class="btn" data-act="doPrint" style="margin-left:8px">印刷する</button></div>
-  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">${S.instructors.map(i => `
+  <div class="qrcards">${S.instructors.map(i => `
   <div style="border:1.5px dashed #9AA3AE;border-radius:10px;padding:12px;display:flex;gap:12px;align-items:center;break-inside:avoid;background:#fff;color:#1F2A37">
     <div class="qr" data-url="${esc(instructorUrl(i))}" style="width:120px;height:120px;flex-shrink:0"></div>
     <div style="font-size:12px;line-height:1.5"><b style="font-size:14px">${esc(i.name)} 指導員</b><br>予約の割り当てはこちら<br>① スマホのカメラで読み取る<br>② ホーム画面に追加<br>③ ログインして「通知」をオン<br><span style="color:#4B5563">${esc(CFG.schoolName)}</span></div>
@@ -220,7 +220,7 @@ function printCards() {
   const list = S.students.filter(s => S.sel.has(s.token));
   const area = document.getElementById("printArea");
   area.innerHTML = `<div class="noprint banner info" style="margin-top:12px">カードを確認して、印刷画面から印刷してください。<button class="btn" data-act="doPrint" style="margin-left:8px">印刷する</button></div>
-  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">${list.map(s => `
+  <div class="qrcards">${list.map(s => `
   <div style="border:1.5px dashed #9AA3AE;border-radius:10px;padding:12px;display:flex;gap:12px;align-items:center;break-inside:avoid;background:#fff;color:#1F2A37">
     <div class="qr" data-url="${esc(studentUrl(s.token))}" style="width:120px;height:120px;flex-shrink:0"></div>
     <div style="font-size:12px;line-height:1.5"><b style="font-size:14px">${esc(s.name)} さん</b><br>空き時間の登録はこちら<br>① スマホのカメラで読み取る<br>② ホーム画面に追加<br>③「通知の設定」で通知をオン<br><span style="color:#4B5563">このQRは他の人に見せないでください<br>${esc(CFG.schoolName)}</span></div>

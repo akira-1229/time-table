@@ -206,6 +206,8 @@ function evaluatePair(s, ds, a, type = "kiken") {
     return { ok: false, reason: s.kikenDone ? `${L}は受講済みです` : `${L}はすでに予約が入っています` };
   const sq = seqCheck(s, [a, a + 1].map(q => ({ token: s.token, date: ds, period: q, lessonType: type, pairId: "new" })));
   if (sq) return { ok: false, reason: sq };
+  if (type === "hwSolo" && inDarkSeason(ds) && ((CFG.darkSeason || {}).hwSoloNo || []).some(set => sameSet(set, [a, a + 1])))
+    return { ok: false, reason: `日没が早い期間は${a}・${a + 1}限の${PT("hwSolo").label}は入れられません` };
   const dark = type === "hwSolo" && inDarkSeason(ds) && ((CFG.darkSeason || {}).hwSoloSets || []).some(set => sameSet(set, [a, a + 1]));
   return { ok: true, dark, combo };
 }
