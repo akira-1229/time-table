@@ -67,6 +67,8 @@ export function isMikiwame(st, it) {
   const min = lessonMin(st.stage), mk = mikiwameOf(st);
   return !!min && it.no + it.units - 1 >= min && !(mk && mk.passed);
 }
+// 今日が検定日か（段階を切り替えた後でも分かるよう、両方の段階を見る）
+export const kenteiOn = (st, ds = dateStr(today())) => [1, 2].some(n => { const m = st[`mikiwame${n}`]; return m && m.passed && m.kenteiDate === ds; });
 export const kenteiText = mk => !mk || !mk.passed ? "" : mk.kenteiDate ? md(mk.kenteiDate) : "未確定";
 
 // 生年月日（YYYY-MM-DD）から今日時点の年齢（○歳○ヶ月）。誕生日が来ると自動で上がる

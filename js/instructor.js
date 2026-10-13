@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, isMikiwame, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -243,6 +243,8 @@ function render() {
     });
     h += `</div>`;
   }
+  const kt = S.students.filter(s => kenteiOn(s));
+  if (kt.length) h += `<div class="banner ok"><b>本日、検定日の方</b><ul style="margin:6px 0 0;padding-left:1.4em">${kt.map(s => `<li>${esc(s.name)}（第${[1, 2].find(n => s[`mikiwame${n}`] && s[`mikiwame${n}`].kenteiDate === dateStr(today()))}段階）</li>`).join("")}</ul></div>`;
   const exp = S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days);
   if (exp.length) h += `<div class="banner warn"><b>期限が近い教習生がいます（${CFG.expiryWarnDays || 30}日以内）</b>${exp.map(([s, e]) => `<br>${esc(s.name)}：<span style="${e.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${esc(expiryText(e))}</span>`).join("")}</div>`;
   const ngs = S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok);

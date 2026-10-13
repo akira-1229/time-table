@@ -73,7 +73,7 @@ const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana ||
 const assignSelect = s => `<select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select>`;
 const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => match(s, f)); };
 // みきわめの状況（今の段階）。合格なら検定日（未確定もある）
-const mkText = s => { const m = mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
+const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
 // 期限が近い・過ぎた日付は赤で出す
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(s[k])}</span>` : ""; };
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
@@ -92,7 +92,7 @@ function renderStudentsPC() {
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
-    { k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => { const m = mikiwameOf(s); return !m ? "3" : !m.passed ? "2" : m.kenteiDate || "1"; } },
+    ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => { const m = mikiwameOf(s); return !m ? "3" : !m.passed ? "2" : m.kenteiDate || "1"; } }]),
     { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
     { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
@@ -183,7 +183,7 @@ function printInstructorCards() {
 const DATES = [["startDate", "教習開始日"], ["classStart", "学科開始日"], ["deadline", "教習期限日"], ["skillStart", "技能開始日"], ["karimenIssued", "仮免交付日"], ["karimenExpiry", "仮免期限日"]];
 // みきわめに合格している時だけ、検定日・学科及び効果測定を直せる（あとから検定日が決まった時など）
 function mkFields(s) {
-  const m = s.token && mikiwameOf(s);
+  const m = !S.isAdmin && s.token && mikiwameOf(s);
   if (!m) return "";
   if (!m.passed) return `<p style="font-size:13px;margin:0 0 10px">みきわめ（第${s.stage}段階）：<b>不合格</b>（${esc(m.date || "")}）。次の教習の「実施」で、もう一度みきわめを記録します。</p>`;
   return `<div class="row"><div class="field"><label for="f_kentei">検定日（みきわめ合格 ${esc(m.date || "")}）</label><input id="f_kentei" type="date" value="${esc(m.kenteiDate || "")}"></div>

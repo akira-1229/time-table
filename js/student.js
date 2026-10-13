@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf
+  installButton, firstVisitInstall, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -70,6 +70,7 @@ function render() {
     <button role="tab" aria-selected="${S.tab === "cal"}" data-act="tab" data-v="cal">空き時間</button>
     <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約・進み具合${unacked() ? '<span class="dot">!</span>' : ""}</button>
   </div><div class="body">`;
+  if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
   h += S.tab === "cal" ? renderCal() : renderBook();
   app.innerHTML = h + `</div></section>`;
 }
@@ -129,6 +130,9 @@ function renderBook() {
       <div class="bar"><i class="${done > min ? "over" : ""}" style="width:${pct}%"></i></div>
       <div style="font-size:12px;color:var(--muted)">受講済み ${done}時限${plan.items.length ? `・予約済み ${plan.total - done}時限` : ""}${done >= min ? "・最低教習時限に達しました" : `・あと${min - done}時限`}</div></div>`;
   }
+  const mk = mikiwameOf(st);
+  if (mk && mk.passed && !kenteiOn(st) && !(mk.kenteiDate && mk.kenteiDate < t0))
+    h += `<div class="banner ok">みきわめに合格しました。<br><b>検定日：${mk.kenteiDate ? md(mk.kenteiDate) : "決まり次第、指導員からお知らせします"}</b></div>`;
   if (!up.length) h += `<div class="banner info">これからの予約はまだありません。指導員が予約を確定すると、ここに表示され通知が届きます。</div>`;
   else {
     h += `<h3 style="margin-top:0">これからの予約</h3><div class="list">`;
