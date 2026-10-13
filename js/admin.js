@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, isKatakana, isPC, viewToggle, onViewChange, applyView, pcTable, nextSort, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -72,6 +72,8 @@ const who = () => S.isAdmin ? `${CFG.schoolName}・管理者` : `${S.me ? S.me.n
 const match = (s, f) => !f || String(s.name).includes(f) || String(s.nameKana || "").includes(toKatakana(f)) || String(s.studentNo).includes(f) || String(s.license || "").includes(f) || (S.isAdmin && iname(s.instructorUid).includes(f));
 const assignSelect = s => `<select data-act="reassign" data-s="${s.token}" aria-label="${esc(s.name)}の担当">${S.instructors.map(i => `<option value="${esc(i.uid)}" ${i.uid === s.instructorUid ? "selected" : ""}>${esc(i.name)}</option>`).join("")}${S.instructors.some(i => i.uid === s.instructorUid) ? "" : `<option value="" selected>（未設定）</option>`}</select>`;
 const filtered = () => { const f = S.filter.trim(); return S.students.filter(s => match(s, f)); };
+// みきわめの状況（今の段階）。合格なら検定日（未確定もある）
+const mkText = s => { const m = mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
 // 期限が近い・過ぎた日付は赤で出す
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(s[k])}</span>` : ""; };
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
@@ -90,6 +92,7 @@ function renderStudentsPC() {
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
+    { k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => { const m = mikiwameOf(s); return !m ? "3" : !m.passed ? "2" : m.kenteiDate || "1"; } },
     { k: "startDate", t: "教習開始" }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
     { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
@@ -110,7 +113,7 @@ function renderStudents() {
   <div class="field" style="margin-top:10px"><label for="flt">絞り込み（名前・番号${S.isAdmin ? "・担当" : ""}）</label><input id="flt" value="${esc(S.filter)}"></div>
   <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th>${S.isAdmin ? "<th>担当</th>" : ""}<th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
@@ -178,6 +181,15 @@ function printInstructorCards() {
 
 // 登録・編集フォーム。日付はすべて YYYY-MM-DD。年齢は登録時点の「○歳○ヶ月」
 const DATES = [["startDate", "教習開始日"], ["classStart", "学科開始日"], ["deadline", "教習期限日"], ["skillStart", "技能開始日"], ["karimenIssued", "仮免交付日"], ["karimenExpiry", "仮免期限日"]];
+// みきわめに合格している時だけ、検定日・学科及び効果測定を直せる（あとから検定日が決まった時など）
+function mkFields(s) {
+  const m = s.token && mikiwameOf(s);
+  if (!m) return "";
+  if (!m.passed) return `<p style="font-size:13px;margin:0 0 10px">みきわめ（第${s.stage}段階）：<b>不合格</b>（${esc(m.date || "")}）。次の教習の「実施」で、もう一度みきわめを記録します。</p>`;
+  return `<div class="row"><div class="field"><label for="f_kentei">検定日（みきわめ合格 ${esc(m.date || "")}）</label><input id="f_kentei" type="date" value="${esc(m.kenteiDate || "")}"></div>
+  <div class="field"><label for="f_gakka">学科及び効果測定</label><select id="f_gakka"><option value="1" ${m.gakkaDone ? "selected" : ""}>終わっている</option><option value="0" ${m.gakkaDone ? "" : "selected"}>終わっていない</option></select></div></div>
+  <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">検定日を空にすると「未確定」になります。</p>`;
+}
 function editSheet(s) {
   const isNew = !s; s = s || { studentNo: "", name: "", stage: 1, active: true };
   const opt = (v, cur, t = v) => `<option value="${esc(v)}" ${String(cur ?? "") === String(v) ? "selected" : ""}>${esc(t)}</option>`;
@@ -199,6 +211,7 @@ function editSheet(s) {
   <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
   <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
   <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
+  ${mkFields(s)}
   ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
@@ -292,6 +305,11 @@ document.addEventListener("click", async e => {
         data.doneCount = 0;
       }
       if (!old) data.doneCount = 0;
+      const kd = document.getElementById("f_kentei");
+      if (old && kd && old.stage === data.stage) {
+        const m = mikiwameOf(old);
+        data[`mikiwame${old.stage}`] = { ...m, kenteiDate: kd.value || null, kenteiUndecided: !kd.value, gakkaDone: document.getElementById("f_gakka").value === "1" };
+      }
       t.disabled = true;
       if (t.dataset.s) { await updateDoc(doc(db, "students", t.dataset.s), data); closeSheet(); await loadAll(); toast("保存しました"); }
       else {

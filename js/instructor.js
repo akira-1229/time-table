@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, isMikiwame, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -237,7 +237,8 @@ function render() {
     h += `<div class="banner warn"><b>終わった教習のチェックが${unchecked.length}件あります</b><br><span style="font-size:12px">教習生が来たら「実施」、来なかったら「欠席」を押してください（欠席は教習生に通知されます）。</span>`;
     unchecked.forEach(it => {
       const s = ST(it.bookings[0].token), ids = it.bookings.map(b => b.id).join(",");
-      const tn = it.lessonType ? `（${PT(it.lessonType).label}）` : it.highway ? "（高速）" : "";
+      const pit = s && planOf(s).items.find(x => x.bookings.some(b => b.id === it.bookings[0].id));
+      const tn = (it.lessonType ? `（${PT(it.lessonType).label}）` : it.highway ? "（高速）" : "") + (s && pit && isMikiwame(s, pit) ? "（みきわめ）" : "");
       h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(s ? s.name : "")}<br>${md(it.date)} ${it.bookings.map(b => b.period).join("・")}限${tn}</span><span style="display:flex;gap:6px"><button class="btn" data-act="markAbsent" data-ids="${ids}">欠席</button><button class="btn accent" data-act="markDone" data-ids="${ids}">実施</button></span></div>`;
     });
     h += `</div>`;
@@ -464,7 +465,7 @@ async function removeBooking(b, why) {
   }
 }
 // 終わった教習のチェック。result：done（実施）／absent（欠席）。実施は doneCount に足す（危険予測は2時限で1、単独高速は2）
-async function markResult(ids, result) {
+async function markResult(ids, result, mk = null) {
   const list = S.pending.filter(b => ids.includes(b.id));
   if (!list.length) return;
   const tok = list[0].token, s = ST(tok), it = lessonItems(list)[0];
@@ -474,6 +475,7 @@ async function markResult(ids, result) {
   if (result === "done") {
     const upd = { doneCount: increment(it.units) };
     if (it.lessonType === "kiken") upd.kikenDone = true;
+    if (mk) upd[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids, at: Timestamp.now() };
     batch.update(doc(db, "students", tok), upd);
   } else {
     batch.set(doc(collection(db, "outbox")), outboxData(tok, "absent", "欠席のお知らせ", `${text} は欠席として記録しました。次の予約は担当指導員からお知らせします。`));
@@ -481,12 +483,28 @@ async function markResult(ids, result) {
   }
   await batch.commit();
   if (s) {
-    if (result === "done") { s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; }
+    if (result === "done") { s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (mk) s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; }
     else s.lastNotifiedAt = Timestamp.now();
   }
   S.pending = S.pending.filter(b => !ids.includes(b.id));
   S.bookings.forEach(b => { if (ids.includes(b.id)) b.result = result; });
-  render(); toast(result === "done" ? `${s ? s.name : ""}さん ${text} を実施にしました` : `${s ? s.name : ""}さんに欠席を通知しました`);
+  render();
+  if (!mk || mk.gakkaDone) toast(result === "done" ? `${s ? s.name : ""}さん ${text} を実施にしました${mk ? `（みきわめ${mk.passed ? "合格" : "不合格"}）` : ""}` : `${s ? s.name : ""}さんに欠席を通知しました`);
+  else sheet(`<h3>${esc(s ? s.name : "")}さんを実施にしました（みきわめ${mk.passed ? "合格" : "不合格"}）</h3>
+    <div class="banner warn">「<b>検定日の2日前までに学科及び効果測定を終わらせておかないといけません</b>」ということを教習生に伝えてください。</div>
+    <div class="banner warn">学科及び効果測定が終了していない教習生に対する<b>みきわめ報告書</b>を提出してください。</div>
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+}
+// みきわめの教習を「実施」にする時のフォーム（合否・検定日・学科及び効果測定）
+function mikiwameSheet(s, it, ids) {
+  const r = (n, v, t) => `<label class="radio"><input type="radio" name="${n}" value="${v}"> ${t}</label>`;
+  sheet(`<h3>みきわめ（第${s.stage}段階 ${it.no}時限目）</h3>
+  <p>${esc(s.name)}<br>${md(it.date)} ${it.bookings.map(b => b.period).join("・")}限</p>
+  <div class="field"><label>みきわめの結果</label><div class="radios">${r("mk_pass", "1", "合格")}${r("mk_pass", "0", "不合格")}</div></div>
+  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date"></div>
+    <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="mk_und"> 検定日は未確定</label></div>
+  <div class="field"><label>学科及び効果測定</label><div class="radios">${r("mk_gakka", "1", "終わっている")}${r("mk_gakka", "0", "終わっていない")}</div></div>
+  <div class="list"><button class="btn accent full" data-act="mkOk" data-ids="${ids.join(",")}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
 }
 // チェックの付け間違いを戻す
 async function unmarkResult(b) {
@@ -497,10 +515,15 @@ async function unmarkResult(b) {
   if (was === "done") {
     const upd = { doneCount: increment(-it.units) };
     if (it.lessonType === "kiken") upd.kikenDone = false;
+    const mkey = s && Object.keys(s).find(k => /^mikiwame\d$/.test(k) && s[k] && (s[k].bookingIds || []).some(id => group.some(x => x.id === id)));
+    if (mkey) upd[mkey] = null;
     batch.update(doc(db, "students", b.token), upd);
   }
   await batch.commit();
-  if (s && was === "done") { s.doneCount = (s.doneCount || 0) - it.units; if (it.lessonType === "kiken") s.kikenDone = false; }
+  if (s && was === "done") {
+    s.doneCount = (s.doneCount || 0) - it.units; if (it.lessonType === "kiken") s.kikenDone = false;
+    Object.keys(s).forEach(k => { if (/^mikiwame\d$/.test(k) && s[k] && (s[k].bookingIds || []).some(id => group.some(x => x.id === id))) s[k] = null; });
+  }
   group.forEach(x => { x.result = null; if (!S.pending.some(y => y.id === x.id)) S.pending.push(x); });
   render(); toast("チェックを取り消しました");
 }
@@ -581,7 +604,21 @@ document.addEventListener("click", async e => {
     else if (a === "markDone" || a === "markAbsent") {
       const ids = t.dataset.ids.split(",");
       if (a === "markAbsent" && !confirm("欠席として記録し、教習生に通知します。よろしいですか？")) return;
+      if (a === "markDone") {
+        const s = ST(S.pending.find(b => b.id === ids[0])?.token), it = s && planOf(s).items.find(x => x.bookings.some(b => b.id === ids[0]));
+        if (it && isMikiwame(s, it)) return mikiwameSheet(s, it, ids);
+      }
       t.disabled = true; await markResult(ids, a === "markDone" ? "done" : "absent");
+    }
+    else if (a === "mkOk") {
+      const val = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
+      const pass = val("mk_pass"), gakka = val("mk_gakka");
+      const date = document.getElementById("mk_date").value, und = document.getElementById("mk_und").checked;
+      if (!pass) return toast("みきわめの結果を選んでください");
+      if (pass === "1" && !date && !und) return toast("検定日を入れるか、「未確定」にチェックしてください");
+      if (!gakka) return toast("学科及び効果測定が終わっているか選んでください");
+      const mk = { passed: pass === "1", kenteiDate: pass === "1" && !und ? date : null, kenteiUndecided: pass === "1" && und, gakkaDone: gakka === "1" };
+      t.disabled = true; closeSheet(); await markResult(t.dataset.ids.split(","), "done", mk);
     }
     else if (a === "unmark") { closeSheet(); await unmarkResult(S.bookings.find(x => x.id === t.dataset.id)); }
     else if (a === "approve") {
@@ -612,5 +649,10 @@ document.addEventListener("click", async e => {
       toast(r.ok ? "キャンセル希望などの通知を受け取れるようになりました" : pushReasonText(r.reason));
     }
   } catch (err) { toast(friendlyError(err)); render(); }
+});
+// みきわめのフォーム：合格の時だけ検定日を出す。「未確定」なら日付は入れない
+document.addEventListener("change", e => {
+  if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";
+  if (e.target.id === "mk_und") { const d = document.getElementById("mk_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });

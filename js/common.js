@@ -60,6 +60,15 @@ export function lessonPlan(st, pending) {
   return { items, total: n, ok, reason };
 }
 
+// みきわめ：その段階の最低教習時限（第1段階12・第2段階19）の教習。合格するまでは、それ以降の教習もみきわめとして扱う
+// 記録は段階ごとに mikiwame1 / mikiwame2 ＝ { passed, date, bookingIds, kenteiDate, kenteiUndecided, gakkaDone }
+export const mikiwameOf = (st, stage = st.stage) => st[`mikiwame${stage}`] || null;
+export function isMikiwame(st, it) {
+  const min = lessonMin(st.stage), mk = mikiwameOf(st);
+  return !!min && it.no + it.units - 1 >= min && !(mk && mk.passed);
+}
+export const kenteiText = mk => !mk || !mk.passed ? "" : mk.kenteiDate ? md(mk.kenteiDate) : "未確定";
+
 // 生年月日（YYYY-MM-DD）から今日時点の年齢（○歳○ヶ月）。誕生日が来ると自動で上がる
 export function ageOf(birth, on = today()) {
   if (!birth) return null;

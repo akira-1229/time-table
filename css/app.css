@@ -194,3 +194,8 @@ body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}
 /* QRカード（印刷用）：スマホの幅では1列、PCや印刷では2列 */
 .qrcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 @media print{.qrcards{grid-template-columns:repeat(2,1fr)}}
+/* ラジオボタン・チェックボックスの選択肢（みきわめのフォームなど） */
+.radios{display:flex;flex-wrap:wrap;gap:8px}
+.radio{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;cursor:pointer}
+.radio input,.field .radio input{width:20px;height:20px;min-height:0;margin:0;padding:0;flex:none}
+.radio:has(input:checked){border-color:var(--blue);background:var(--blue-soft)}
