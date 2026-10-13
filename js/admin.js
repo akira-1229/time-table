@@ -201,7 +201,7 @@ function editSheet(s) {
   <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
   ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
-  ${isNew ? "" : `<button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
+  ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
@@ -216,6 +216,15 @@ async function deleteStudent(tok) {
   await batch.commit();
 }
 
+// 1人分のQRコードを大きく出す。登録・再発行の直後と、編集画面の「QRコードを表示する」から
+function qrSheet(st, done = "") {
+  sheet(`${done ? `<div class="banner ok" style="margin-top:0">${esc(done)}</div>` : ""}<h3 style="margin-top:0">${esc(st.name)} さんのQRコード</h3>
+  <p style="font-size:13px;margin-top:0">教習生のスマホのカメラで読み取ってもらってください。開いたら「ホーム画面に追加」と「通知をオン」まで一緒に進めると安心です。</p>
+  <div style="background:#fff;padding:14px;border-radius:12px;width:max-content;margin:0 auto 12px"><div id="qrBig"></div></div>
+  <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:0">このQRコードは本人だけに渡してください（他の人が読み取ると、その人の画面が開きます）</p>
+  <div class="list"><button class="btn full" data-act="printOne" data-s="${st.token}">QRカードを印刷する</button><button class="btn primary full" data-act="close">閉じる</button></div>`);
+  new QRCode(document.getElementById("qrBig"), { text: studentUrl(st.token), width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+}
 function printCards() {
   const list = S.students.filter(s => S.sel.has(s.token));
   const area = document.getElementById("printArea");
@@ -258,6 +267,8 @@ document.addEventListener("click", async e => {
     else if (a === "sort") { S.sort = nextSort(S.sort, t.dataset.k); render(); }
     else if (a === "selAll") { document.querySelectorAll('[data-act="sel"]').forEach(c => S.sel.add(c.dataset.s)); render(); }
     else if (a === "print") { printCards(); }
+    else if (a === "showQR") qrSheet(S.students.find(s => s.token === t.dataset.s));
+    else if (a === "printOne") { S.sel = new Set([t.dataset.s]); closeSheet(); render(); printCards(); }
     else if (a === "doPrint") window.print();
     else if (a === "save") {
       const v = id => document.getElementById(id).value.trim();
@@ -282,9 +293,13 @@ document.addEventListener("click", async e => {
       }
       if (!old) data.doneCount = 0;
       t.disabled = true;
-      if (t.dataset.s) await updateDoc(doc(db, "students", t.dataset.s), data);
-      else await setDoc(doc(db, "students", newToken()), { ...data, createdAt: serverTimestamp() });
-      closeSheet(); await loadAll(); toast("保存しました");
+      if (t.dataset.s) { await updateDoc(doc(db, "students", t.dataset.s), data); closeSheet(); await loadAll(); toast("保存しました"); }
+      else {
+        // 新しく登録した時は、そのままQRコードを出す（その場で教習生のスマホで読み取ってもらう）
+        const nt = newToken();
+        await setDoc(doc(db, "students", nt), { ...data, createdAt: serverTimestamp() });
+        await loadAll(); qrSheet({ token: nt, ...data }, "登録しました");
+      }
     }
     else if (a === "reissue") {
       if (!confirm("QRコードを再発行します。古いQRコードは使えなくなります。よろしいですか？")) return;
@@ -296,7 +311,7 @@ document.addEventListener("click", async e => {
       await copySub(old, nt, "months", batch); await copySub(old, nt, "bookings", batch);
       batch.delete(doc(db, "students", old));
       await batch.commit();
-      S.sel = new Set([nt]); closeSheet(); await loadAll(); printCards(); toast("再発行しました。新しいQRカードを渡してください");
+      await loadAll(); qrSheet({ token: nt, ...data }, "再発行しました");
     }
     else if (a === "delInst") {
       const i = S.instructors.find(x => x.uid === t.dataset.u), n = S.students.filter(x => x.instructorUid === i.uid).length;
