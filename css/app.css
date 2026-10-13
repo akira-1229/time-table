@@ -135,9 +135,11 @@ table.wk{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fix
 
 /* ---- 本番用の追加 ---- */
 .topbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
-.topbar h1{font-size:16px;margin:0}
+.topbar h1{font-size:16px;margin:0;white-space:nowrap}
+.topbar>span{text-align:right}
 .topbar small{color:var(--muted);font-size:12px}
 .linkbtn{border:0;background:none;color:var(--blue);font-weight:700;padding:8px;min-height:44px}
+a.linkbtn{text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle}
 .center{text-align:center}
 .err{background:var(--orange-soft);border-radius:12px;padding:14px;margin-top:20px}
 .weeknav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}

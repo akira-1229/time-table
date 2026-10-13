@@ -65,7 +65,7 @@ function unacked() {
 function render() {
   const st = S.student;
   let h = `<div class="topbar"><div><h1>${esc(CFG.schoolName)}</h1><small>${esc(st.name)} さん</small></div>
-    <span>${installButton()}<button class="linkbtn" data-act="push">通知の設定</button></span></div>
+    <span>${installButton()}<button class="linkbtn" data-act="push">通知の設定</button><a class="linkbtn" href="guide-student.html">使い方</a></span></div>
   <section class="panel"><div class="tabs" role="tablist">
     <button role="tab" aria-selected="${S.tab === "cal"}" data-act="tab" data-v="cal">空き時間</button>
     <button role="tab" aria-selected="${S.tab === "book"}" data-act="tab" data-v="book">予約・進み具合${unacked() ? '<span class="dot">!</span>' : ""}</button>

@@ -29,7 +29,7 @@ function renderLogin(msg = "") {
   <div class="field"><label for="em">メールアドレス</label><input id="em" type="email" autocomplete="username" required></div>
   <div class="field"><label for="pw">パスワード</label><input id="pw" type="password" autocomplete="current-password" required></div>
   ${msg ? `<div class="banner warn">${esc(msg)}</div>` : ""}
-  <button class="btn accent full" data-act="login">ログイン</button></form>${installButton() ? `<p class="center" style="margin:10px 0 0">${installButton()}</p>` : ""}</div></section>`;
+  <button class="btn accent full" data-act="login">ログイン</button></form><p class="center" style="margin:10px 0 0">${installButton()}<a class="linkbtn" href="guide-instructor.html">使い方</a></p></div></section>`;
   // QRのURL（?e=メールアドレス）から開いた時は、メールアドレスを入れておく
   const e = new URLSearchParams(location.search).get("e"); if (e && !document.getElementById("em").value) document.getElementById("em").value = e;
 }
@@ -227,7 +227,7 @@ function render() {
   if (!S.uid) return;
   const ds = days(); const wEnd = ds[ds.length - 1];
   let h = `<div class="topbar"><div><h1>${esc(S.me ? S.me.name : "")} さん</h1><small>担当 ${S.students.length}人・<button class="linkbtn" style="padding:0;min-height:0;font-size:12px" data-act="view" data-v="manage">教習生の管理</button></small></div>
-    <span>${installButton()}<button class="linkbtn" data-act="push">通知</button><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
+    <span>${installButton()}<button class="linkbtn" data-act="push">通知</button><a class="linkbtn" href="guide-instructor.html">使い方</a><button class="linkbtn" data-act="logout">ログアウト</button></span></div>`;
   h += `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
   if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
   h += `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
