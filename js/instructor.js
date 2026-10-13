@@ -219,8 +219,25 @@ const daysLeft = s => s.deadline ? Math.round((parseDate(s.deadline) - today()) 
 const unacked = s => s.lastNotifiedAt && (!s.ackAt || s.lastNotifiedAt.toMillis() > s.ackAt.toMillis());
 const info = s => {
   const dl = daysLeft(s), pl = planOf(s), min = lessonMin(s.stage);
-  return `第${s.stage}段階・実施${doneOf(s)}/${min}時限${pl.items.length ? `・予定${pl.total - doneOf(s)}` : ""}${min && pl.total > min ? "・延長あり" : ""}・今週${weekCount(s.token)}件${dl !== null ? `・期限まであと${dl}日` : ""}`;
+  return `第${s.stage}段階・実施${doneOf(s)}/${min}時限${pl.items.length ? `・予定${pl.total - doneOf(s)}` : ""}${min && pl.total > min ? "・延長あり" : ""}・今週${weekCount(s.token)}時限${dl !== null ? `・期限まであと${dl}日` : ""}`;
 };
+
+/* ---------- 今週の割り振り（教習生ごとの時限数） ---------- */
+// 進み具合に差がつかないよう、この週に何時限入っているかを並べる（少ない順）。平均より1時限以上少ない人は注意、0は赤
+function balanceHtml() {
+  if (!S.students.length) return "";
+  const rows = S.students.map(s => ({ s, n: weekCount(s.token), d: S.bookings.filter(b => b.token === s.token && b.status === "draft").length, free: freeCount(s) }))
+    .sort((a, b) => a.n - b.n || String(a.s.deadline || "9").localeCompare(String(b.s.deadline || "9")));
+  const avg = rows.reduce((t, r) => t + r.n, 0) / rows.length, min = rows[0].n, max = rows[rows.length - 1].n;
+  const low = rows.filter(r => r.n <= avg - 1).length, top = Math.max(1, max);
+  const lv = r => r.n === 0 ? "zero" : r.n <= avg - 1 ? "low" : "ok";
+  let h = `<details class="bal" ${S.balOpen ? "open" : ""}><summary><b>今週の割り振り</b>　平均 ${avg.toFixed(1)}時限・最少 ${min}・最多 ${max}${max - min >= 2 ? `<span class="tag late">差が${max - min}時限あります</span>` : ""}${low ? `<span class="tag wait">少ない人 ${low}人</span>` : ""}</summary>
+    <div class="balnote">この週に入っている時限数です（未確定を含みます）。少ない人から順に並んでいます。押すと、その人を選んで割り当てられます。</div><div class="ballist">`;
+  rows.forEach(r => {
+    h += `<button class="balrow ${lv(r)}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(r.s.name)}</span><span class="bar"><i style="width:${Math.round(r.n / top * 100)}%"></i></span><span class="n"><b>${r.n}</b>時限${r.d ? `<small>（未確定${r.d}）</small>` : ""}</span><span class="fr">${r.free ? `◯${r.free}枠` : "◯なし"}</span></button>`;
+  });
+  return h + `</div></details>`;
+}
 
 /* ---------- 画面 ---------- */
 function render() {
@@ -262,6 +279,7 @@ function render() {
   const none = S.students.filter(s => weekCount(s.token) === 0).length;
   const total = ds.length * 10;
   h += `<div class="sum"><div><b>${S.bookings.length}</b>予約した枠</div><div class="${none ? "alert" : ""}"><b>${none}</b>まだ予約のない人</div><div><b>${total - S.bookings.length}</b>空いている枠</div></div>`;
+  h += balanceHtml();
   h += `<div class="seg" role="group" aria-label="割り当て方"><button aria-pressed="${S.mode === "slot"}" data-act="mode" data-v="slot">枠から選ぶ</button><button aria-pressed="${S.mode === "student"}" data-act="mode" data-v="student">教習生から選ぶ</button></div>`;
 
   let maxN = 1; ds.forEach(d => { for (let p = 1; p <= 10; p++) maxN = Math.max(maxN, S.students.filter(s => isFree(s.token, d, p)).length); });
@@ -309,7 +327,7 @@ function render() {
     h += `<h3>担当の教習生（予約の少ない順）</h3><div class="slist">`;
     list.forEach(s => {
       const n = weekCount(s.token);
-      h += `<button class="srow" aria-pressed="${S.pick === s.token}" data-act="pick" data-s="${s.token}"><span><span class="t">${esc(s.name)}</span>${S.late[s.token] ? ' <span class="tag late">締切後に変更あり</span>' : ""}<br><span class="s">${info(s)}・この週の空き${freeCount(s)}枠</span></span><span class="cnt ${n ? "some" : "zero"}">${n ? `予約${n}件` : "予約なし"}</span></button>`;
+      h += `<button class="srow" aria-pressed="${S.pick === s.token}" data-act="pick" data-s="${s.token}"><span><span class="t">${esc(s.name)}</span>${S.late[s.token] ? ' <span class="tag late">締切後に変更あり</span>' : ""}<br><span class="s">${info(s)}・この週の空き${freeCount(s)}枠</span></span><span class="cnt ${n ? "some" : "zero"}">${n ? `今週${n}時限` : "予約なし"}</span></button>`;
     });
     h += `</div>`;
   }
@@ -576,6 +594,7 @@ document.addEventListener("click", async e => {
     else if (a === "view") { showView(t.dataset.v); if (t.dataset.v === "assign" && S.uid) await loadWeek(); }
     else if (a === "reload") { await loadWeek(); }
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
+    else if (a === "balPick") { S.mode = "student"; S.pick = t.dataset.s; S.ptype = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }
     else if (a === "pick") { S.pick = S.pick === t.dataset.s ? null : t.dataset.s; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (a === "unpick") { S.pick = null; S.ptype = null; render(); }
@@ -652,6 +671,8 @@ document.addEventListener("click", async e => {
     }
   } catch (err) { toast(friendlyError(err)); render(); }
 });
+// 「今週の割り振り」を開いたかどうかを覚えておく（描き直しても閉じないように）
+document.addEventListener("toggle", e => { if (e.target.classList && e.target.classList.contains("bal")) S.balOpen = e.target.open; }, true);
 // みきわめのフォーム：合格の時だけ検定日を出す。「未確定」なら日付は入れない
 document.addEventListener("change", e => {
   if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";

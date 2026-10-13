@@ -202,3 +202,18 @@ body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}
 .radio{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;cursor:pointer}
 .radio input,.field .radio input{width:20px;height:20px;min-height:0;margin:0;padding:0;flex:none}
 .radio:has(input:checked){border-color:var(--blue);background:var(--blue-soft)}
+/* 今週の割り振り（教習生ごとの時限数） */
+.bal{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:var(--surface)}
+.bal summary{padding:10px 12px;cursor:pointer;font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bal summary b{font-size:14px}
+.balnote{font-size:12px;color:var(--muted);padding:0 12px 6px}
+.ballist{display:grid;gap:4px;padding:0 8px 10px}
+.balrow{display:grid;grid-template-columns:minmax(0,7em) minmax(0,1fr) auto auto;gap:8px;align-items:center;border:0;border-radius:8px;background:var(--bg);padding:6px 8px;text-align:left;font-size:13px;width:100%;color:var(--ink)}
+.balrow .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.balrow .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.balrow .bar i{display:block;height:100%;background:var(--blue)}
+.balrow .n{white-space:nowrap;font-variant-numeric:tabular-nums}.balrow .n b{font-size:15px}
+.balrow .n small{color:var(--muted);font-size:11px}
+.balrow .fr{font-size:11px;color:var(--muted);white-space:nowrap}
+.balrow.low{background:var(--orange-soft)}.balrow.low .bar i{background:var(--orange)}
+.balrow.zero{background:var(--lv3-soft)}.balrow.zero .n b{color:var(--lv3)}
