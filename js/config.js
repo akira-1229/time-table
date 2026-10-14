@@ -23,7 +23,7 @@ self.APP_CONFIG = {
   // GitHub Pagesの公開URL（最後に / を付ける）例: https://ユーザー名.github.io/time-table/
   appUrl: "https://akira-1229.github.io/time-table/",
   // 通知をすぐ送るための Apps Script のウェブアプリのURL（SETUP.md 手順9-7）。空なら1分おきの定期送信だけ
-  sendNowUrl: "",
+  sendNowUrl: "https://script.google.com/macros/s/AKfycbwFxjvirZ5auDgS9GfBsixWenby-LwVCc9XfQ3uYlpFyleB8AQat30dUdM_7xy-p9AL/exec",
 
   schoolName: "聖徳自動車学園",
   schoolTel: "058-387-4171",        // キャンセル連絡用の電話番号
