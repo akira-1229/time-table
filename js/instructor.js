@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -637,7 +637,7 @@ function renderSettings() {
     <div class="setlabel">最初の割り当て方</div><div class="chips wrapchips">${pc("startmode", "slot", sm, "枠から選ぶ")}${pc("startmode", "student", sm, "教習生から選ぶ")}</div>
     <div class="setlabel">「今週の割り振り」の一覧</div><div class="chips wrapchips">${pc("balopen", "1", bo, "最初から開いておく")}${pc("balopen", "0", bo, "閉じておく")}</div>
     <p class="setnote">「開いた時」の設定は、次に画面を開いた時から使われます。</p></div>
-  <div class="setgrp"><h3>通知・アプリ</h3><div class="list"><button class="btn full" data-act="push">この端末で通知を受け取る</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
+  <div class="setgrp"><h3>通知・アプリ</h3>${pushStatusHtml()}<div class="list"><button class="btn full" data-act="push">この端末で通知を受け取る</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
     <p class="setnote">キャンセル希望や期限が近い教習生のお知らせが届きます。</p></div>
   <div class="setgrp"><h3>アカウント</h3><div class="item"><div><div class="t">${esc(S.me.name)}</div><div class="s">${esc(S.me.email || "")}</div></div><button class="btn" data-act="logout">ログアウト</button></div></div>
   <div class="setgrp"><h3>困った時は</h3><div class="list"><a class="btn full center" style="text-decoration:none" href="guide-instructor.html">使い方を見る</a></div>
@@ -742,6 +742,7 @@ document.addEventListener("click", async e => {
         await updateDoc(doc(db, "instructors", S.uid), { fcmTokens: next }); S.me.fcmTokens = next;
       });
       toast(r.ok ? "キャンセル希望などの通知を受け取れるようになりました" : pushReasonText(r.reason));
+      if (S.view === "settings") renderSettings();
     }
   } catch (err) { toast(friendlyError(err)); render(); }
 });

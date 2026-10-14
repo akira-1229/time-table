@@ -152,15 +152,18 @@ export const isStandalone = () => window.matchMedia("(display-mode: standalone)"
 export async function enablePush(saveToken) {
   if (DEMO) return { ok: false, reason: "demo" };
   if (isIOS() && !isStandalone()) return { ok: false, reason: "ios-home" };
-  if (!("Notification" in window) || !(await isSupported())) return { ok: false, reason: "unsupported" };
-  const perm = await Notification.requestPermission();
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return { ok: false, reason: "unsupported" };
+  // iPhoneは、ボタンを押した直後に許可を求めないと確認画面が出ない（ほかの処理を待った後だと無視される）。だから最初に聞く
+  const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (perm !== "granted") return { ok: false, reason: "denied" };
+  if (!(await isSupported())) return { ok: false, reason: "unsupported" };
   const reg = await navigator.serviceWorker.register("./firebase-messaging-sw.js", { scope: "./" });
   await navigator.serviceWorker.ready;
   const messaging = getMessaging(app);
   const token = await getToken(messaging, { vapidKey: CFG.vapidKey, serviceWorkerRegistration: reg });
   if (!token) return { ok: false, reason: "no-token" };
   await saveToken(token);
+  try { localStorage.setItem("timetable_push_on", "1"); } catch (e) { }
   listenForeground();
   return { ok: true };
 }
@@ -174,6 +177,16 @@ export async function listenForeground(onMsg) {
     toast(`${n.title || "お知らせ"}：${n.body || ""}`);
     if (onMsg) onMsg(p);
   });
+}
+// この端末の通知の状態（設定画面に出す）
+export function pushStatusHtml() {
+  if (DEMO) return "";
+  let t, cls = "wait";
+  if (!("Notification" in window)) t = isIOS() && !isStandalone() ? "ホーム画面に追加したアイコンから開くと、通知を設定できます" : "この端末・ブラウザは通知に対応していません";
+  else if (Notification.permission === "denied") t = "通知がブロックされています。端末の設定で、このアプリの通知をオンにしてください";
+  else if (Notification.permission === "granted") { let on = false; try { on = !!localStorage.getItem("timetable_push_on"); } catch (e) { } t = on ? "通知オン（この端末に届きます）" : "許可済みです。下のボタンをもう一度押すと設定が終わります"; cls = on ? "ok" : "wait"; }
+  else t = "まだ設定していません。下のボタンを押してください";
+  return `<div class="pushst"><span class="tag ${cls}">この端末</span> ${esc(t)}</div>`;
 }
 export function pushReasonText(r) {
   return {

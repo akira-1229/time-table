@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, sendNow, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
+  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -86,7 +86,7 @@ function render() {
 function renderSet() {
   const st = S.student;
   return `${lookSettingsHtml({ view: false })}
-  <div class="setgrp"><h3>通知・アプリ</h3><div class="list"><button class="btn primary full" data-act="push">通知の設定</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
+  <div class="setgrp"><h3>通知・アプリ</h3>${pushStatusHtml()}<div class="list"><button class="btn primary full" data-act="push">通知の設定</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
     <p class="setnote">予約が決まった時や変更があった時に、スマホに通知が届きます。${isIOS() ? "iPhoneは、ホーム画面に追加したアイコンから開いた時だけ通知を受け取れます。" : ""}</p></div>
   <div class="setgrp"><h3>あなたの情報</h3><div class="item"><div><div class="t">${esc(st.name)} さん</div><div class="s">${st.studentNo ? `教習生番号 ${esc(st.studentNo)}・` : ""}第${st.stage}段階</div></div></div>
     <p class="setnote">登録内容が違う時は、担当の指導員に伝えてください。</p></div>
@@ -276,6 +276,7 @@ document.addEventListener("click", async e => {
         S.student.fcmTokens = next;
       });
       closeSheet(); toast(r.ok ? "通知を受け取れるようになりました" : pushReasonText(r.reason));
+      if (S.tab === "set") render();
     } catch (err) { closeSheet(); toast(friendlyError(err)); }
   }
 });
