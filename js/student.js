@@ -110,14 +110,17 @@ function renderCal() {
     h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
   }
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
-  h += `<div class="gridwrap"><table class="cal"><thead><tr><th></th>`;
-  for (let p = 1; p <= 10; p++) h += `<th scope="col">${p}</th>`;
-  h += `</tr></thead><tbody>`;
+  // 縦が時限、横が日付（日付が多いので横にスクロール。時限の列は左に固定）
   const start = S.mi === 0 ? now.getDate() : 1;
-  for (let d = start; d <= daysIn(y, m); d++) {
-    const ds = dateStr(new Date(y, m - 1, d)); const w = parseDate(ds).getDay();
-    h += `<tr><th scope="row" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}(${WD[w]})</th>`;
-    for (let p = 1; p <= 10; p++) {
+  const dl = []; for (let d = start; d <= daysIn(y, m); d++) dl.push(d);
+  h += `<div class="calhint">縦が時限、横が日付です。横にスクロールすると月末まで見られます。</div>`;
+  h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
+  dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
+  h += `</tr></thead><tbody>`;
+  for (let p = 1; p <= 10; p++) {
+    h += `<tr><th scope="row" class="pl">${p}限<small>${P[p][0]}</small></th>`;
+    dl.forEach(d => {
+      const ds = dateStr(new Date(y, m - 1, d));
       const b = confirmedAt(ds, p);
       if (b) {
         h += `<td><button class="cell ${b.cancelRequested ? "req" : "booked"}" data-act="locked" data-id="${b.id}" aria-label="${label(ds, p)} 予約済み">予</button></td>`;
@@ -125,7 +128,7 @@ function renderCal() {
         const on = set.has(slotKey(d, p));
         h += `<td><button class="cell ${on ? "on" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}">${on ? "◯" : ""}</button></td>`;
       }
-    }
+    });
     h += `</tr>`;
   }
   h += `</tbody></table></div>

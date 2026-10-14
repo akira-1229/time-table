@@ -267,3 +267,12 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .chips.wrapchips{flex-wrap:wrap;overflow:visible}
 .tel{font-variant-numeric:tabular-nums;user-select:all}
 .pushst{font-size:13px;margin:0 0 10px;display:flex;gap:6px;align-items:baseline}
+/* 教習生の空き時間：縦が時限、横が日付。時限の列は左に固定して、日付は横にスクロール */
+.calwrap{margin:0 -16px;padding:0 16px 4px}
+.calt th.pl{position:sticky;left:-16px;z-index:2;background:var(--surface);text-align:right;padding:0 6px 0 2px;font-size:12px;line-height:1.15;white-space:nowrap;color:var(--ink)}
+.calt th.pl small{display:block;font-size:9px;color:var(--muted);font-weight:400}
+.calt thead th.day{text-align:center;padding:0 0 2px;font-size:12px;line-height:1.15;color:var(--ink)}
+.calt thead th.day small{display:block;font-size:10px;color:var(--muted)}
+.calt thead th.sat,.calt thead th.sat small{color:var(--blue)}
+.calt thead th.sun,.calt thead th.sun small{color:#C0392B}
+.calhint{font-size:12px;color:var(--muted);margin:-2px 0 6px}
