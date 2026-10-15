@@ -25,7 +25,9 @@
 }
 :root[data-theme="light"]{color-scheme:light}
 /* 文字の大きさ「大きめ」 */
-:root[data-fs="large"] body{zoom:1.12}
+/* 文字を大きめにする時は中身だけを拡大する（body ごと zoom すると、iPhoneで画面下の固定タブが途中で止まって動かなくなる） */
+:root[data-fs="large"] .wrap,:root[data-fs="large"] .sheet{zoom:1.12}
+:root[data-fs="large"] body:not(.pc) .tn-tabs button{font-size:13.5px}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);font-family:'BIZ UDPGothic','Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-size:15px;line-height:1.5}

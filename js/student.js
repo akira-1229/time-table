@@ -5,7 +5,8 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml
+  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
+  inputDeadlineOf, pastInputDeadline
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -50,9 +51,12 @@ function fail(msg) { app.innerHTML = `<div class="err">${esc(msg)}</div>`; }
 
 const nextYm = () => ymOf(MONTHS[1].y, MONTHS[1].m);
 const nextMonthFilled = () => (S.avail[nextYm()] || new Set()).size > 0;
-const isLate = ym => ym === nextYm() && now.getDate() > CFG.deadlineDay;
-// 締切（前の月の deadlineDay）を過ぎた月は◯を外せない。今月は常に締切後、来月は deadlineDay を過ぎたら
-const pastDeadline = ym => ym !== nextYm() || now.getDate() > CFG.deadlineDay;
+// 締切は教習生ごと（標準は前の月の deadlineDay 日。指導員が「その月の3日」などに変えられる）。締切を過ぎた月は◯を外せない
+const dlOf = ym => inputDeadlineOf(S.student, ym);
+const pastDeadline = ym => pastInputDeadline(S.student, ym);
+// 「締切後に変更あり」：今月に締切が来た月（ふつうは来月分）を、締切後に変えた時
+const isLate = ym => pastDeadline(ym) && dlOf(ym).slice(0, 7) === ymOf(MONTHS[0].y, MONTHS[0].m);
+const dlText = ym => { const [, m, d] = dlOf(ym).split("-").map(Number); return `${m}月${d}日`; };
 // この画面を開いてから付けた◯は、締切後でも付け間違いとして外せる
 const addSlot = (ym, k) => { if (!S.avail[ym].has(k)) { S.avail[ym].add(k); (S.addedNow[ym] = S.addedNow[ym] || new Set()).add(k); } };
 const canRemove = (ym, k) => !CFG.noRemoveAfterDeadline || !pastDeadline(ym) || (S.addedNow[ym] && S.addedNow[ym].has(k));
@@ -100,15 +104,12 @@ const lockedNote = () => CFG.noRemoveAfterDeadline
   : "予約が入っていない枠は変更できます。";
 function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
-  const nm = MONTHS[1];
   let h = "";
-  if (S.mi === 1) {
-    h += nextMonthFilled()
-      ? `<div class="banner ok">${nm.m}月分は入力済みです。${now.getDate() <= CFG.deadlineDay ? `締切の${MONTHS[0].m}月${CFG.deadlineDay}日までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}` : lockedNote()}</div>`
-      : `<div class="banner warn"><b>${nm.m}月分の入力締切は${MONTHS[0].m}月${CFG.deadlineDay}日です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
-  } else {
-    h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
-  }
+  const filled = set.size > 0, open = !pastDeadline(ym);
+  if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;
+  else if (open) h += `<div class="banner warn"><b>${m}月分の入力締切は${dlText(ym)}です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
+  else if (S.mi === 1 && !filled) h += `<div class="banner warn"><b>${m}月分の入力締切（${dlText(ym)}）を過ぎています。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
+  else h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   // 縦が時限、横が日付（日付が多いので横にスクロール。時限の列は左に固定）
   const start = S.mi === 0 ? now.getDate() : 1;

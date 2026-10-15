@@ -44,7 +44,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   firebase-messaging-sw.js 通知用サービスワーカー（compat SDK）。ホーム画面に追加できるよう全画面で登録する（デモでは Firebase を読み込まない）
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
   manifest-staff.json
-  css/app.css              色はCSS変数。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic
+  css/app.css              色はCSS変数。文字「大きめ」は .wrap と .sheet だけ zoom（body ごと zoom すると iPhone で下の固定タブが途中で止まる）。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
   js/boot.js               「読み込み中…」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
@@ -70,7 +70,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, `gender`, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
@@ -80,7 +80,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 
 ## 業務フロー
 
-1. 教習生：毎月、次月分の空き時間を登録（締切 `deadlineDay`＝毎月20日。仮の値）。締切までは自由に変更可。**締切後は◯を付けるのはOK、外すのは不可**（`noRemoveAfterDeadline`。外したい時は学園に電話。その画面を開いてから付けた◯だけは付け間違いとして外せる。今は画面側だけの制限で、`firestore.rules` では止めていない）。締切後の変更は `late` を立て、指導員側に「締切後に変更あり」
+1. 教習生：毎月、次月分の空き時間を登録（締切 `deadlineDay`＝毎月20日。仮の値。**教習生ごとに変えられる**：指導員の「教習生の管理」→編集の「空き時間の入力締切」＝`students/{t}.inputDeadline`（`"p25"`前の月の25日／`"pe"`前の月の末日／`"c3"`その月の3日／空＝標準）。判定は `common.js` の `inputDeadlineOf`・`pastInputDeadline`、Apps Script の締切前リマインドも教習生ごとの締切で送る）。今月の分は（締切が「その月の○日」でまだ来ていない人を除き）締切後扱い。締切までは自由に変更可。**締切後は◯を付けるのはOK、外すのは不可**（`noRemoveAfterDeadline`。外したい時は学園に電話。その画面を開いてから付けた◯だけは付け間違いとして外せる。今は画面側だけの制限で、`firestore.rules` では止めていない）。締切後の変更は `late` を立て、指導員側に「締切後に変更あり」
 2. 指導員：週ごと（`openDays` 月〜土）にマス目で割り当てる。確定前は何度入れ直しても通知しない。教習生の◯・キャンセル希望は `onSnapshot` でリアルタイムに反映。未確定の予約の枠から教習生が◯を外すと、赤い「空き取消」と警告を出す
 3. 「この週の予約を確定して通知」→ 教習生1人につき **週1回まとめて** 通知
 4. 確定後の追加・取り消し・キャンセル承認/却下は **その都度** 通知
@@ -109,6 +109,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | 最低教習時限 | 第1段階 12、第2段階 19（12時限目が危険予測、13〜15が高速教習。単独高速なら13・14で、その後15〜19）。超えると延長料金。危険予測は2時限使うが1時限として数える | `lessons` |
 | 危険予測の順番 | **ちょうど12時限目のみ**。12時限目に通常や単独高速が来る予約、危険予測が12時限目からずれる予約は入れられない。欠席などで既にずれている時は警告を出し、直す操作は止めない | `lessons[2].kikenNo` |
 | 段階 | 第1段階には高速教習・危険予測・単独高速は無い（依頼者確認済み） | `specialStages: [2]` |
+| 学科の受講確認 | 第2段階の10時限目は学科15番、13時限目（高速教習）は学科16番を受講していないと受けられない。その時限目に当たる予約を入れる時に「この教習は学科の○番を受講していないと受けることはできませんが、受講済ですか？」を出す（ボタンはOKだけ。外側を押すとやめる） | `gakkaCheck` / `instructor.js` の `gakkaAsk` |
 | 単独高速の日没 | 日没が早い期間は 7・8 を警告（確認すれば強制で入れられる `forced: true`）。9・10 はこの期間は **不可**（強制も不可。依頼者確認済み）。8・9 は季節に関係なく不可 | `darkSeason.hwSoloSets` / `darkSeason.hwSoloNo` |
 
 **今週の割り振り**（`instructor.js` の `balanceHtml`）：進み具合の差はクレームになるため（依頼者）、集計の下に教習生ごとのこの週の時限数（未確定を含む）を少ない順に出す。見出しに平均・最少・最多、差が2時限以上なら「差がN時限」、平均より1時限以上少ない人数。0は赤、平均−1以下はオレンジ。名前を押すと「教習生から選ぶ」でその人を選ぶ。開閉は描き直しても保つ。指導員画面の見た目：縦が時限・横が日付のマス目。空きマスには「その枠に入れる人数」と横棒。色は **その週の最多人数を3等分** して 緑（少ない）／黄（中間）／赤（多い）（依頼者が選択）。割り当て方は「枠から選ぶ」（候補は今週の予約の少ない順→教習期限の近い順）と「教習生から選ぶ」（選んだ人の入れる枠だけ光る。高速はオレンジ、危険予測は緑）。

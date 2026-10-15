@@ -420,6 +420,22 @@ function highwaySheet(s, ds, p, ev) {
   <button class="btn full" data-act="close">やめる</button></div>`);
 }
 
+// 学科の受講確認（config の gakkaCheck）：入れようとしている教習が、決まった時限目（第2段階の10・13時限目など）に当たる時に確認を出す
+function gakkaAsk(s, ds, periods, lessonType = "") {
+  const rules = (CFG.gakkaCheck || []).filter(r => r.stage === s.stage);
+  if (!rules.length) return [];
+  const pairId = periods.length > 1 ? "__new" : undefined;
+  const extra = periods.map(q => ({ id: `__new${q}`, token: s.token, date: ds, period: q, lessonType, pairId, stage: s.stage }));
+  const its = planOf(s, extra).items.filter(x => x.bookings.some(b => String(b.id).startsWith("__new")));
+  return rules.filter(r => its.some(x => x.no <= r.no && r.no < x.no + x.units));
+}
+function gakkaSheet(s, rules, go) {
+  S.gakkaGo = go;
+  sheet(`<h3>学科の受講確認</h3><p>${esc(s.name)}（第${s.stage}段階）${rules.map(r => `${r.no}時限目`).join("・")}の教習です。</p>
+  ${rules.map(r => `<div class="banner warn"><b>この教習は学科の${r.gakka}番を受講していないと受けることはできませんが、受講済ですか？</b></div>`).join("")}
+  <div class="list"><button class="btn primary full" data-act="gakkaOk">OK</button></div>`);
+}
+
 /* ---------- 書き込み ---------- */
 function outboxData(tok, type, title, body) {
   return { to: "student", type, studentToken: tok, instructorUid: S.uid, title, body, createdAt: serverTimestamp(), sent: false };
@@ -439,11 +455,12 @@ function darkPairSheet(s, ds, a, type) {
   <div class="list"><button class="btn accent full" data-act="assignPairForce" data-s="${s.token}" data-d="${ds}" data-p="${a}" data-t="${type}">警告を確認して入れる（強制）</button>
   <button class="btn full" data-act="close">やめる</button></div>`);
 }
-async function assignPair(tok, ds, a, type = "kiken", force) {
+async function assignPair(tok, ds, a, type = "kiken", force, gk) {
   const s = ST(tok);
   const ev = evaluatePair(s, ds, a, type);
   if (!ev.ok) return toast(ev.reason);
   if (ev.dark && !force) return darkPairSheet(s, ds, a, type);
+  if (!gk) { const r = gakkaAsk(s, ds, [a, a + 1], type); if (r.length) return gakkaSheet(s, r, () => assignPair(tok, ds, a, type, force, true)); }
   const L = PT(type).label;
   const status = S.confirmed ? "confirmed" : "draft";
   const pairId = `${tok.slice(0, 6)}_${ds}_${a}`;
@@ -459,12 +476,13 @@ async function assignPair(tok, ds, a, type = "kiken", force) {
 }
 
 // mode：undefined＝通常、"hw"＝高速教習として確認済み、"force"＝日没期間の警告を確認したうえで強制
-async function assign(tok, ds, p, mode) {
+async function assign(tok, ds, p, mode, gk) {
   const s = ST(tok);
   const ev = evaluate(s, ds, p);
   if (ev.ok === false) return toast(ev.reason);
   if (ev.ok === "hw" && !mode) return highwaySheet(s, ds, p, ev);
   if (ev.ok === "hw" && ev.dark && mode !== "force") return highwaySheet(s, ds, p, ev);
+  if (!gk) { const r = gakkaAsk(s, ds, [p]); if (r.length) return gakkaSheet(s, r, () => assign(tok, ds, p, mode, true)); }
   const status = S.confirmed ? "confirmed" : "draft";
   const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status, cancelRequested: false, result: null, stage: s.stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
   if (ev.ok === "hw") { data.highway = true; if (mode === "force") data.forced = true; }
@@ -679,6 +697,7 @@ document.addEventListener("click", async e => {
     else if (a === "sheetType") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.v); }
     else if (a === "pairStart") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t || "kiken", +t.dataset.v); }
     else if (a === "ptype") { S.ptype = t.dataset.v || null; render(); }
+    else if (a === "gakkaOk") { const go = S.gakkaGo; S.gakkaGo = null; t.disabled = true; closeSheet(); if (go) await go(); }
     else if (a === "assignHw") { t.disabled = true; closeSheet(); await assign(t.dataset.s, t.dataset.d, +t.dataset.p, "hw"); }
     else if (a === "assignForce") { t.disabled = true; closeSheet(); await assign(t.dataset.s, t.dataset.d, +t.dataset.p, "force"); }
     else if (a === "booked") {

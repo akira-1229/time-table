@@ -2,7 +2,7 @@
  * 空き時間登録システム 通知係（Google Apps Script）
  *
  * ・processOutbox：1分おきに起動（＋画面からウェブアプリとして呼ばれた時はすぐ）。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
- * ・dailyReminder：毎朝起動。締切の数日前と前日に、次月分が未入力の教習生だけに通知する
+ * ・dailyReminder：毎朝起動。締切（教習生ごと）の数日前と前日に、その月の分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
  *
@@ -162,12 +162,8 @@ function dailyReminder() {
 }
 function inputReminder_() {
   const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));
-  const deadline = Number(prop('DEADLINE_DAY') || 20);
+  const std = Number(prop('DEADLINE_DAY') || 20);
   const before = String(prop('REMIND_DAYS') || '3,1').split(',').map(Number);
-  const left = deadline - now.getDate();
-  if (before.indexOf(left) < 0) return;
-  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const ym = Utilities.formatDate(next, 'Asia/Tokyo', 'yyyy-MM');
   const students = query_({
     from: [{ collectionId: 'students' }],
     where: { fieldFilter: { field: { fieldPath: 'active' }, op: 'EQUAL', value: { booleanValue: true } } }
@@ -175,12 +171,24 @@ function inputReminder_() {
   const appUrl = prop('APP_URL'); let n = 0;
   students.forEach(st => {
     const tok = relPath_(st.name).split('/')[1];
-    const m = getDoc_(`students/${tok}/months/${ym}`);
-    if (m && m.slots && m.slots.length) return;                 // 入力済みの人には送らない
-    n += deliver_(`students/${tok}`, st.data.fcmTokens,
-      `${next.getMonth() + 1}月分の空き時間を入力してください`,
-      `締切は${now.getMonth() + 1}月${deadline}日です。空いている時間帯に◯を付けてください。`,
-      `${appUrl}student.html?t=${encodeURIComponent(tok)}`) ? 1 : 0;
+    // 締切は教習生ごと（inputDeadline："p25"＝前の月の25日、"pe"＝前の月の末日、"c3"＝その月の3日。空＝前の月の DEADLINE_DAY 日）
+    const v = String(st.data.inputDeadline || ('p' + std));
+    [0, 1].forEach(k => {
+      const month = new Date(now.getFullYear(), now.getMonth() + k, 1);
+      const base = v[0] === 'c' ? month : new Date(month.getFullYear(), month.getMonth() - 1, 1);
+      const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+      const day = v === 'pe' ? last : Math.min(last, Math.max(1, Number(v.slice(1)) || std));
+      const dl = new Date(base.getFullYear(), base.getMonth(), day);
+      const left = Math.round((dl - now) / 86400000);
+      if (before.indexOf(left) < 0) return;
+      const ym = Utilities.formatDate(month, 'Asia/Tokyo', 'yyyy-MM');
+      const m = getDoc_(`students/${tok}/months/${ym}`);
+      if (m && m.slots && m.slots.length) return;                 // 入力済みの人には送らない
+      n += deliver_(`students/${tok}`, st.data.fcmTokens,
+        `${month.getMonth() + 1}月分の空き時間を入力してください`,
+        `締切は${dl.getMonth() + 1}月${dl.getDate()}日です。空いている時間帯に◯を付けてください。`,
+        `${appUrl}student.html?t=${encodeURIComponent(tok)}`) ? 1 : 0;
+    });
   });
   Logger.log(`締切のお知らせ：${n}人に送信`);
 }

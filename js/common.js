@@ -71,6 +71,20 @@ export function isMikiwame(st, it) {
 }
 // 今日が検定日か（段階を切り替えた後でも分かるよう、両方の段階を見る）
 export const kenteiOn = (st, ds = dateStr(today())) => [1, 2].some(n => { const m = st[`mikiwame${n}`]; return m && m.passed && m.kenteiDate === ds; });
+// 空き時間の入力締切（教習生ごと）。students/{t}.inputDeadline："p25"＝前の月の25日、"pe"＝前の月の末日、"c3"＝その月の3日。空＝毎月 deadlineDay 日（前の月）
+export function inputDeadlineOf(st, ym) {
+  const v = String((st && st.inputDeadline) || `p${CFG.deadlineDay}`);
+  const [y, m] = ym.split("-").map(Number);
+  const [yy, mm] = v[0] === "c" ? [y, m] : m === 1 ? [y - 1, 12] : [y, m - 1];
+  const last = daysIn(yy, mm), d = v === "pe" ? last : Math.min(last, Math.max(1, +v.slice(1) || CFG.deadlineDay));
+  return `${yy}-${pad(mm)}-${pad(d)}`;
+}
+export const pastInputDeadline = (st, ym, on = dateStr(today())) => on > inputDeadlineOf(st, ym);
+export function inputDeadlineText(st) {
+  const v = (st && st.inputDeadline) || "";
+  if (!v) return `前の月の${CFG.deadlineDay}日（標準）`;
+  return v === "pe" ? "前の月の末日" : v[0] === "c" ? `その月の${+v.slice(1)}日` : `前の月の${+v.slice(1)}日`;
+}
 export const kenteiText = mk => !mk || !mk.passed ? "" : mk.kenteiDate ? md(mk.kenteiDate) : "未確定";
 
 // 生年月日（YYYY-MM-DD）から今日時点の年齢（○歳○ヶ月）。誕生日が来ると自動で上がる

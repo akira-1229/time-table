@@ -112,7 +112,7 @@ function renderStudentsPC() {
   const cols = [
     { t: `<input type="checkbox" data-act="selPage" aria-label="表示中を全選択" ${list.length && list.every(s => S.sel.has(s.token)) ? "checked" : ""}>`, html: s => `<input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">` },
     { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
-    { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 }, { k: "gender", t: "性別" },
+    { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
     ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => distOf(kenteiOf(s)) }]),
@@ -149,7 +149,7 @@ function renderSettings() {
   const fmt = k => `${+k.slice(0, 2)}月${+k.slice(3)}日`, dk = CFG.darkSeason || {};
   const rows = [
     ["学園名", CFG.schoolName], ["学園の電話番号", CFG.schoolTel], ["公開URL", CFG.appUrl],
-    ["入力の締切", `毎月${CFG.deadlineDay}日（次月分）。締切後は◯を外せない`],
+    ["入力の締切", `毎月${CFG.deadlineDay}日（次月分。教習生ごとに編集画面で変えられます）。締切後は◯を外せない`],
     ["予約を入れる曜日", CFG.openDays.map(d => "日月火水木金土"[d]).join("・")],
     ["1日の上限", Object.entries(CFG.dailyMax).map(([k, v]) => `第${k}段階 ${v}時限`).join("、")],
     ["最低教習時限", Object.entries(CFG.lessons || {}).map(([k, v]) => `第${k}段階 ${v.min}時限${v.kikenNo ? `（${v.kikenNo}時限目が${(CFG.kiken || {}).label}）` : ""}`).join("、")],
@@ -226,7 +226,7 @@ function editSheet(s) {
   <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off" inputmode="numeric" maxlength="4" placeholder="数字4桁（例：0123）"></div>
   ${S.isAdmin ? `<div class="field"><label for="f_in">担当指導員<span style="color:var(--lv3)">＊必須</span></label><select id="f_in">${opt("", s.instructorUid || (S.isInst ? S.uid : ""), "選んでください")}${S.instructors.map(i => opt(i.uid, s.instructorUid || (S.isInst ? S.uid : ""), i.name)).join("")}</select></div>` : "<div></div>"}</div>
   <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
-  <div class="field"><label for="f_sx">性別</label><select id="f_sx">${opt("", s.gender, "選んでください")}${opt("男", s.gender)}${opt("女", s.gender)}</select></div></div>
+  <div></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><input id="f_lic" list="dl_lic" value="${esc(s.license || "")}" autocomplete="off"></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
   <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
@@ -236,6 +236,8 @@ function editSheet(s) {
   <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
   <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
   <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
+  <div class="field"><label for="f_idl">空き時間の入力締切</label><select id="f_idl">${idlOptions(s.inputDeadline || "")}</select>
+    <span style="font-size:12px;color:var(--muted)">社会人などで月末・月初に予定が分かる人は、締切を遅らせてください。締切を過ぎると、教習生は◯を外せなくなります。</span></div>
   ${mkFields(s)}
   ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
@@ -243,6 +245,15 @@ function editSheet(s) {
   <button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
+// 入力締切の選択肢：標準／前の月の1〜30日・末日／その月の1〜15日
+function idlOptions(cur) {
+  const o = (v, t) => `<option value="${v}" ${v === cur ? "selected" : ""}>${t}</option>`;
+  let h = o("", `標準（前の月の${CFG.deadlineDay}日）`) + `<optgroup label="前の月">`;
+  for (let d = 1; d <= 30; d++) if (d !== CFG.deadlineDay) h += o(`p${d}`, `前の月の${d}日`);
+  h += o("pe", "前の月の末日") + `</optgroup><optgroup label="その月に入ってから">`;
+  for (let d = 1; d <= 15; d++) h += o(`c${d}`, `その月の${d}日`);
+  return h + `</optgroup>`;
+}
 async function copySub(fromTok, toTok, sub, batch) {
   const snap = await getDocs(collection(db, "students", fromTok, sub));
   snap.docs.forEach(d => { batch.set(doc(db, "students", toTok, sub, d.id), d.data()); batch.delete(d.ref); });
@@ -315,7 +326,7 @@ document.addEventListener("click", async e => {
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
         studentNo: toHalfDigits(v("f_no")), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
-        birthDate: v("f_birth") || null, gender: v("f_sx") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
+        birthDate: v("f_birth") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
       DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
       if (data.studentNo && !/^\d{4}$/.test(data.studentNo)) return toast("教習生番号は数字4桁で入れてください（例：0123）");
@@ -323,6 +334,7 @@ document.addEventListener("click", async e => {
       if (!data.nameKana) return toast("フリガナを入れてください");
       if (!data.instructorUid) return toast("担当指導員を選んでください");
       if (!isKatakana(data.nameKana)) return toast("フリガナはカタカナで入れてください（ひらがなは自動でカタカナになります）");
+      data.inputDeadline = v("f_idl") || null;
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
       data.kikenDone = document.getElementById("f_kd").value === "1";
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
