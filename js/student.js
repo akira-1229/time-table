@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
+  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
   inputDeadlineOf, pastInputDeadline
 } from "./common.js";
 
@@ -38,7 +38,7 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); firstVisitInstall("student"); }
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); }
   } catch (e) { fail(friendlyError(e)); }
 }
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する
@@ -66,6 +66,35 @@ function unacked() {
   return n && (!a || n.toMillis() > a.toMillis());
 }
 
+// 次の教習（確定済みで、まだ終わっていない一番早い予約）。2時限連続の教習は1つにまとめる
+function nextLesson() {
+  const st = S.student, t = new Date();
+  const list = S.bookings.filter(b => b.status === "confirmed" && !b.result && bookingEnd(b) > t);
+  const it = lessonItems(list)[0]; if (!it) return null;
+  const plan = lessonPlan(st, S.bookings.filter(b => b.status === "confirmed" && !b.result && (b.stage ?? st.stage) === st.stage));
+  const pi = plan.items.find(x => x.bookings.some(y => y.id === it.bookings[0].id));
+  const ps = it.bookings.map(b => b.period).sort((a, b) => a - b);
+  const kind = it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.highway ? "高速教習" : "";
+  const no = pi ? (pi.units > 1 ? `${pi.no}・${pi.no + 1}時限目` : `${pi.no}時限目`) : "";
+  return { date: it.date, ps, time: `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`, kind, no, req: it.bookings.some(b => b.cancelRequested) };
+}
+const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
+// アプリを開くたびに（ホーム画面から戻ってきた時も、10分以上たっていれば）次の教習を大きく出す
+let nextShownAt = 0;
+function showNextLesson() {
+  const n = nextLesson(); if (!n) return;
+  nextShownAt = Date.now();
+  const isToday = n.date === dateStr(today());
+  sheet(`<h3>${isToday ? "今日の教習" : "次の教習"}</h3>
+  <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.no ? `・${n.no}` : ""}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
+  ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
+  <p style="font-size:13px;color:var(--muted)">時間に遅れないようにお越しください。都合が悪くなった時は、早めに学園にお電話ください。</p>
+  <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && S.student && Date.now() - nextShownAt > 10 * 60 * 1000 && !document.querySelector("#overlay .sheet")) showNextLesson();
+});
+
 // 画面の下にいつも出すタブ：左「空き時間の登録」、真ん中「教習の進み具合」、右「設定」
 const TABS = [
   ["cal", "空き時間の登録", '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8.5 15l2.3 2.3 4.7-4.6"/></svg>'],
@@ -80,6 +109,8 @@ function renderNav() {
 function render() {
   const st = S.student, title = TABS.find(x => x[0] === S.tab)[1];
   let h = `<div class="topbar"><div><h1>${title}</h1><small>${esc(CFG.schoolName)}・${esc(st.name)} さん</small></div></div>`;
+  const nx = nextLesson();
+  if (nx) h += `<button class="nextbar" data-act="next"><span>${nx.date === dateStr(today()) ? "今日の教習" : "次の教習"}</span><b>${nextText(nx)}</b><small>${nx.time}</small></button>`;
   if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
   h += `<section class="panel"><div class="body${S.tab === "set" ? " setpage" : ""}">`;
   h += S.tab === "cal" ? renderCal() : S.tab === "book" ? renderBook() : renderSet();
@@ -206,6 +237,7 @@ document.addEventListener("click", async e => {
   const t = e.target.closest("[data-act]"); if (!t) return;
   const a = t.dataset.act;
   if (a === "tab") { S.tab = t.dataset.v; render(); window.scrollTo(0, 0); }
+  else if (a === "next") showNextLesson();
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const k = slotKey(+t.dataset.d, +t.dataset.p);

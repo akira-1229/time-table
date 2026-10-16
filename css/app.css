@@ -278,3 +278,13 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .calt thead th.sat,.calt thead th.sat small{color:var(--blue)}
 .calt thead th.sun,.calt thead th.sun small{color:#C0392B}
 .calhint{font-size:12px;color:var(--muted);margin:-2px 0 6px}
+
+/* 教習生：次の教習（上の帯と、開いた時に出す案内） */
+.nextbar{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;width:100%;margin:10px 0 0;padding:10px 14px;border:1px solid var(--blue);border-radius:14px;background:var(--blue-soft);color:var(--ink);font:inherit;text-align:left}
+.nextbar span{font-size:12px;font-weight:700;color:var(--blue)}
+.nextbar b{font-size:16px}
+.nextbar small{font-size:12px;color:var(--muted)}
+.nextl{text-align:center;padding:14px 8px;margin:4px 0 10px;border-radius:14px;background:var(--blue-soft)}
+.nextl .d{font-size:20px;font-weight:700}
+.nextl .p{font-size:30px;font-weight:700;color:var(--blue);line-height:1.3}
+.nextl .s{font-size:13px;color:var(--muted)}

@@ -240,8 +240,9 @@ export function installSheet(kind) {
 export function firstVisitInstall(kind) {
   if (!canInstall() || window.top !== window) return;
   const key = `timetable_install_shown_${kind}`;
-  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, "1"); } catch (e) { return; }
-  setTimeout(() => { if (!document.querySelector("#overlay .sheet")) installSheet(kind); }, 1200);
+  try { if (localStorage.getItem(key)) return; } catch (e) { return; }
+  // ほかの案内（次の教習など）が出ている時は、次に開いた時に回す
+  setTimeout(() => { if (document.querySelector("#overlay .sheet")) return; try { localStorage.setItem(key, "1"); } catch (e) { } installSheet(kind); }, 1200);
 }
 if (typeof document !== "undefined") document.addEventListener("click", async e => {
   const t = e.target.closest("[data-act]"); if (!t) return;
