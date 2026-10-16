@@ -88,7 +88,7 @@ function showNextLesson() {
   sheet(`<h3>${isToday ? "今日の教習" : "次の教習"}</h3>
   <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.no ? `・${n.no}` : ""}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
-  <p style="font-size:13px;color:var(--muted)">時間に遅れないようにお越しください。都合が悪くなった時は、早めに学園にお電話ください。</p>
+  <p style="font-size:13px;color:var(--muted)">教習開始の5分前には到着して、配車券の発行をお願い致します。都合が悪くなった時は、早めに学園にお電話ください。</p>
   <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }
 document.addEventListener("visibilitychange", () => {
