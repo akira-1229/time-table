@@ -33,6 +33,12 @@ export const slotKey = (day, p) => `${day}-${p}`;                    // 月ご�
 // 危険予測は2時限で1つと数える。単独高速は2時限として数える
 export const lessonMin = stage => ((CFG.lessons || {})[stage] || {}).min || 0;
 export const kikenNoOf = stage => ((CFG.lessons || {})[stage] || {}).kikenNo || 0;
+export const hwNoOf = stage => ((CFG.lessons || {})[stage] || {}).hwNo || 0;
+// 高速教習は「単独高速（2時限）」か「高速教習（3時限）」。古いデータの highway:true だけの予約も高速として扱う
+export const isHwType = t => t === "hwSolo" || t === "hw3";
+const UNITS = { hwSolo: 2, hw3: 3 };   // 時限数として数える数（危険予測は2時限で1つ）
+// 何時限目かの表示（2時限なら「13・14」、3時限なら「13〜15」）
+export const noRange = it => it.units === 1 ? `${it.no}` : it.units === 2 ? `${it.no}・${it.no + 1}` : `${it.no}〜${it.no + it.units - 1}`;
 export const doneOf = st => (st.priorDone || 0) + (st.doneCount || 0);
 export const bookingEnd = b => { const [h, m] = P[b.period][1].split(":").map(Number); const d = parseDate(b.date); d.setHours(h, m); return d; };
 // 予約の一覧を「教習1つ」ごとにまとめる（2時限連続の教習は1つにまとめる）
@@ -40,7 +46,7 @@ export function lessonItems(list) {
   const items = [], byPair = {};
   [...list].sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period).forEach(b => {
     if (b.pairId && byPair[b.pairId]) { byPair[b.pairId].bookings.push(b); return; }
-    const it = { date: b.date, period: b.period, lessonType: b.lessonType || "", highway: !!b.highway, bookings: [b], units: b.lessonType === "hwSolo" ? 2 : 1 };
+    const it = { date: b.date, period: b.period, lessonType: b.lessonType || "", highway: !!b.highway, bookings: [b], units: UNITS[b.lessonType] || 1 };
     if (b.pairId) byPair[b.pairId] = it;
     items.push(it);
   });
@@ -59,7 +65,24 @@ export function lessonPlan(st, pending) {
     else if (at && at.lessonType !== "kiken") { ok = false; reason = `${K}時限目は${(CFG.kiken || {}).label || "危険予測"}です（今は${at.lessonType ? "別の教習" : "通常の教習"}が入っています）`; }
     else if (!at && doneOf(st) >= K) { ok = false; reason = `${(CFG.kiken || {}).label || "危険予測"}を受けないまま${K}時限を超えています`; }
   }
+  // 高速教習はちょうど hwNo 時限目（第2段階13時限目）から。単独高速なら13・14、3時限なら13〜15
+  const H = hwNoOf(st.stage);
+  if (ok && H && !st.hwDone) {
+    const isHw = it => isHwType(it.lessonType) || (it.highway && !it.lessonType);
+    const hh = items.filter(it => isHwType(it.lessonType));
+    const at = items.find(it => it.no <= H && H < it.no + it.units);
+    if (hh.some(it => it.no !== H)) { ok = false; reason = `高速教習が${hh.find(it => it.no !== H).no}時限目になっています（${H}時限目からのみ）`; }
+    else if (at && !isHw(at)) { ok = false; reason = `${H}時限目は高速教習です（今は${at.lessonType ? "別の教習" : "通常の教習"}が入っています）`; }
+    else if (!at && doneOf(st) >= H) { ok = false; reason = `高速教習を受けないまま${H}時限を超えています`; }
+  }
   return { items, total: n, ok, reason };
+}
+// 次に入れる教習（今の予約のいちばん後ろ）が、危険予測や高速教習の番か。"kiken"／"hw"／""
+export function nextSpecial(st, pending) {
+  const next = lessonPlan(st, pending).total + 1;
+  if (kikenNoOf(st.stage) === next && !st.kikenDone) return "kiken";
+  if (hwNoOf(st.stage) === next && !st.hwDone) return "hw";
+  return "";
 }
 
 // みきわめ：その段階の最低教習時限（第1段階12・第2段階19）の教習。合格するまでは、それ以降の教習もみきわめとして扱う

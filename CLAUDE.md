@@ -70,9 +70,9 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone, hwDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
-| `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
+| `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"/"hw3"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
 | `outbox/{id}` | 通知の送信待ち `to(student/instructor), type, studentToken, instructorUid, title, body, sent` | 指導員（教習生宛）／教習生（キャンセル希望のみ指導員宛）。読み出しは Apps Script だけ |
 
@@ -101,8 +101,10 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | 1日の上限 | 第1段階 2時限、第2段階 3時限 | `dailyMax` |
 | 連続3時限 | 第2段階は原則禁止（1・2・4、3・4・6、7・8・10 はOK） | `noTripleStages` |
 | 連続の数え方 | **3限と4限の間（昼休み）は連続に数えない**。2・3・4、3・4・5 はOK。5/6、8/9 の20分休憩は連続に数える（依頼者確認済み） | `breakAfter: [3]` |
-| 高速教習 | 高速教習に限り連続3時限可。組み合わせは 1・2・3／4・5・6／5・6・7／6・7・8 のみ。確認ダイアログを出し、3時限すべてに `highway: true` | `highwaySets` |
-| 日没が早い期間 | 10月3日〜2月15日は 6・7・8 の高速教習を **警告**。警告を確認すれば強制で入れられる（`forced: true`）。ルールは変わる可能性あり | `darkSeason` |
+| 高速教習 | **ちょうど13時限目から**（`lessons[2].hwNo`。13時限目に通常の教習は入れられない）。種類は「高速2時限」＝単独高速（`hwSolo`）か「高速3時限」（`lessonType: "hw3"`、3件を `pairId` で1組、`highway: true`、3時限として数える）を選ぶ。3時限の組み合わせは 1・2・3／4・5・6／5・6・7／6・7・8 のみ。連続3時限は高速3時限だけ（通常の予約を3つ並べても高速にはならない）。受講済みは `students/{t}.hwDone`（実施チェックで立つ。編集画面でも直せる） | `highwaySets` / `hw3` |
+| 種類の選択肢 | 危険予測・高速教習は、その教習生の次の教習（予約の一番後ろ）が12時限目・13時限目の時だけ選べる（`common.js` の `nextSpecial`、`instructor.js` の `specialTypes`）。「教習生から選ぶ」は番の人を選ぶとその種類だけ、「枠から選ぶ」は番の人に「危険予測で入れる／高速教習で入れる」ボタン | |
+| 同じ日の危険予測と高速 | 同じ日に危険予測と高速教習（2時限・3時限とも）は入れられない。例外は 危険予測4・5限→単独高速6・7限 の組だけ | `pairCombos` |
+| 日没が早い期間 | 10月3日〜2月15日は 6・7・8 の高速教習（3時限）を **警告**。警告を確認すれば強制で入れられる（`forced: true`）。ルールは変わる可能性あり | `darkSeason` |
 | 危険予測 | 2時限連続の特別な教習（`lessonType: "kiken"`、2件を `pairId` で1組）。昼休み・20分休憩をまたぐ組（3・4、5・6、8・9）は **絶対に不可**。可：1・2／2・3／4・5／6・7／7・8／9・10。ほかの予約と合わせて連続3時限になる組も不可。取り消しは2時限まとめて | `kiken.noPairAfter: [3,5,8]` |
 | 単独高速 | 1人で高速教習を2時限連続（`lessonType: "hwSolo"`、`highway: true`、2件を `pairId` で1組）。単独でも入れられる。3・4（昼休み）と 8・9（季節に関係なく）は不可、5・6 はOK（依頼者確認済み）。ほかの予約と合わせて連続3時限になる組は不可。取り消しは2時限まとめて | `hwSolo.noPairAfter: [3, 8]` |
 | 危険予測→単独高速 | 危険予測 4・5限 → 単独高速 6・7限 の組に限り、1日4時限・連続でもOK（段階を問わず。1日の上限も超えてよい）。順番は危険予測→単独高速のみで、単独高速の直後に危険予測は不可 | `pairCombos` |
@@ -142,7 +144,6 @@ Firebase の準備ができたら `demo: false` にして Firebase の値を入�
 - [ ] 予約を入れる曜日（今は月〜土。日曜を含むか）
 - [ ] 第1段階の連続2時限に制限があるか（今は制限なし）
 - [ ] 指導員が「確定」する期限
-- [ ] 高速教習も「ちょうど13時限目から」に縛るか（今は危険予測だけ番号を見ている）
 - [ ] 希望免許・所持免許の候補（`licenseTypes`・`heldLicenseTypes` は仮）。仮免期限日の自動計算（6ヶ月後の前日）が学園の扱いと合っているか
 
 ## 今後やること（候補）

@@ -288,3 +288,5 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .nextl .d{font-size:20px;font-weight:700}
 .nextl .p{font-size:30px;font-weight:700;color:var(--blue);line-height:1.3}
 .nextl .s{font-size:13px;color:var(--muted)}
+.seg.seg4{grid-template-columns:repeat(4,1fr)}
+.seg.seg4 button{padding:6px 2px;font-size:13px}

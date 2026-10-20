@@ -5,7 +5,7 @@ import {
 import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
-  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
+  installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
   inputDeadlineOf, pastInputDeadline
 } from "./common.js";
 
@@ -75,7 +75,7 @@ function nextLesson() {
   const pi = plan.items.find(x => x.bookings.some(y => y.id === it.bookings[0].id));
   const ps = it.bookings.map(b => b.period).sort((a, b) => a - b);
   const kind = it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.highway ? "高速教習" : "";
-  const no = pi ? (pi.units > 1 ? `${pi.no}・${pi.no + 1}時限目` : `${pi.no}時限目`) : "";
+  const no = pi ? `${noRange(pi)}時限目` : "";
   return { date: it.date, ps, time: `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`, kind, no, req: it.bookings.some(b => b.cancelRequested) };
 }
 const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
@@ -173,7 +173,7 @@ function renderBook() {
   const t0 = dateStr(now);
   const st = S.student, min = lessonMin(st.stage), done = doneOf(st);
   const plan = lessonPlan(st, S.bookings.filter(b => b.status === "confirmed" && !b.result && (b.stage ?? st.stage) === st.stage));
-  const noOf = b => { const it = plan.items.find(x => x.bookings.some(y => y.id === b.id)); if (!it) return ""; const n = it.units > 1 ? it.no + (it.bookings[0].id === b.id ? 0 : 1) : it.no; return `${n}時限目${n > min ? "（延長）" : ""}`; };
+  const noOf = b => { const it = plan.items.find(x => x.bookings.some(y => y.id === b.id)); if (!it) return ""; const k = it.units > 1 ? it.bookings.slice().sort((x, y) => x.period - y.period).findIndex(y => y.id === b.id) : 0, n = it.no + Math.max(0, k); return `${n}時限目${n > min ? "（延長）" : ""}`; };
   const up = S.bookings.filter(b => b.status === "confirmed" && !b.result && b.date >= t0).sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);
   const can = S.bookings.filter(b => b.status === "cancelled" && b.date >= t0);
   const absent = S.bookings.filter(b => b.result === "absent").sort((a, b) => b.date.localeCompare(a.date) || a.period - b.period);
@@ -275,7 +275,7 @@ document.addEventListener("click", async e => {
   }
   else if (a === "locked") {
     const b = S.bookings.find(x => x.id === t.dataset.id);
-    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.pairId ? `<br>${esc(b.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : (CFG.kiken || {}).label || "危険予測")}（2時限連続のため、キャンセルは2時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
+    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.pairId ? `<br>${esc(b.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : b.lessonType === "hw3" ? (CFG.hw3 || {}).label || "高速教習" : (CFG.kiken || {}).label || "危険予測")}（${b.lessonType === "hw3" ? 3 : 2}時限連続のため、キャンセルは${b.lessonType === "hw3" ? 3 : 2}時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
       ${b.cancelRequested ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div><button class="btn full" data-act="close">閉じる</button>'
         : `<div class="list"><button class="btn accent full" data-act="reqCancel" data-id="${b.id}">キャンセル希望を送る</button><a class="btn full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`}`);
   }

@@ -236,10 +236,11 @@ function editSheet(s) {
   <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
   <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
   <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
+  <div class="row"><div class="field"><label for="f_hd">高速教習</label><select id="f_hd">${opt(0, s.hwDone ? 1 : 0, "まだ")}${opt(1, s.hwDone ? 1 : 0, "受講済み")}</select></div><div></div></div>
   <div class="field"><label for="f_idl">空き時間の入力締切</label><select id="f_idl">${idlOptions(s.inputDeadline || "")}</select>
     <span style="font-size:12px;color:var(--muted)">社会人などで月末・月初に予定が分かる人は、締切を遅らせてください。締切を過ぎると、教習生は◯を外せなくなります。</span></div>
   ${mkFields(s)}
-  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数と危険予測は0から数え直します。</p>`}
+  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数・危険予測・高速教習は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
@@ -337,11 +338,13 @@ document.addEventListener("click", async e => {
       data.inputDeadline = v("f_idl") || null;
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
       data.kikenDone = document.getElementById("f_kd").value === "1";
+      data.hwDone = document.getElementById("f_hd").value === "1";
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
       if (old && old.stage !== data.stage) {
         // 段階が変わったら、その段階の時限数は0から数え直す（入力欄を変えていなければ0にする）
         if (data.priorDone === (old.priorDone || 0)) data.priorDone = 0;
         if (data.kikenDone === !!old.kikenDone) data.kikenDone = false;
+        if (data.hwDone === !!old.hwDone) data.hwDone = false;
         data.doneCount = 0;
       }
       if (!old) data.doneCount = 0;
