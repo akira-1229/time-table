@@ -89,7 +89,10 @@ function showNextLesson() {
   <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.no ? `・${n.no}` : ""}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
   <p style="font-size:13px;color:var(--muted)">教習開始の5分前には到着して、配車券の発行をお願い致します。都合が悪くなった時は、早めに学園にお電話ください。</p>
-  <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+  <label class="ackchk"><input type="checkbox" id="nl_chk"> 確認しました</label>
+  <div class="list"><button class="btn primary full" id="nl_ok" data-act="nextOk" disabled>OK</button></div>`);
+  // 「確認しました」にチェックを付けてOKを押すまで閉じない（外側を押しても閉じない）
+  const bg = document.querySelector("#overlay .sheet-bg"); if (bg) bg.removeAttribute("data-act");
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && S.student && Date.now() - nextShownAt > 10 * 60 * 1000 && !document.querySelector("#overlay .sheet")) showNextLesson();
@@ -232,22 +235,41 @@ function bulkSheet() {
   sheet(h);
 }
 
+document.addEventListener("change", e => {
+  if (e.target.id === "nl_chk") document.getElementById("nl_ok").disabled = !e.target.checked;
+});
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
   const t = e.target.closest("[data-act]"); if (!t) return;
   const a = t.dataset.act;
   if (a === "tab") { S.tab = t.dataset.v; render(); window.scrollTo(0, 0); }
   else if (a === "next") showNextLesson();
+  else if (a === "nextOk") {
+    if (!document.getElementById("nl_chk")?.checked) return;
+    closeSheet();
+    // 指導員の画面の「確認状況」も確認済みにする（未確認の時だけ書く）
+    if (unacked()) {
+      try { await updateDoc(doc(db, "students", T), { ackAt: serverTimestamp() }); S.student.ackAt = { toMillis: () => Date.now() }; render(); }
+      catch (err) { toast(friendlyError(err)); }
+    }
+  }
+  else if (a === "addOk") {
+    const mi = +t.dataset.mi, { y, m } = MONTHS[mi], ym = ymOf(y, m), k = slotKey(+t.dataset.d, +t.dataset.p);
+    closeSheet(); addSlot(ym, k); render(); scheduleSave(ym);
+  }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const k = slotKey(+t.dataset.d, +t.dataset.p);
     if (S.avail[ym].has(k)) {
       if (!canRemove(ym, k)) return removeLockedSheet(ym, +t.dataset.d, +t.dataset.p);
       S.avail[ym].delete(k);
+      render(); scheduleSave(ym);
     } else {
-      addSlot(ym, k);
+      // 指が触れただけで◯が付かないように、付ける前に確認する
+      const ds = dateStr(new Date(y, m - 1, +t.dataset.d)), p = +t.dataset.p;
+      sheet(`<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>
+        <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
     }
-    render(); scheduleSave(ym);
   }
   else if (a === "copy") {
     // 今月の曜日ごとのパターン（よく◯が付いている時限）を来月に写す
