@@ -59,6 +59,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "access",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "iu",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

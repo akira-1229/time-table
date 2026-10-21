@@ -357,17 +357,19 @@ export const deviceName = () => {
   const d = /iPhone/.test(u) ? "iPhone" : /iPad|Macintosh/.test(u) && navigator.maxTouchPoints > 1 ? "iPad" : /Android/.test(u) ? "Android" : "PC";
   return `${d}・${isStandalone() ? "ホーム画面" : "ブラウザ"}`;
 };
-let accessAt = 0, accessWho = null, accessKind = "", accessListening = false;
+let accessAt = 0, accessWho = null, accessKind = "", accessIu = "", accessListening = false;
 function logAccess() {
   if (!accessWho || Date.now() - accessAt < 10 * 60 * 1000) return;
   accessAt = Date.now();
-  addDoc(collection(db, "access"), { kind: accessKind, who: accessWho, at: serverTimestamp(), device: deviceName() }).catch(() => { });
+  const rec = { kind: accessKind, who: accessWho, at: serverTimestamp(), device: deviceName() };
+  if (accessIu) rec.iu = accessIu;   // 教習生の記録には担当指導員を入れる（指導員が自分の担当の分を見られるように）
+  addDoc(collection(db, "access"), rec).catch(() => { });
   updateDoc(doc(db, accessKind === "student" ? "students" : "instructors", accessWho), { lastAccessAt: serverTimestamp() }).catch(() => { });
 }
-export function trackAccess(kind, who) {
+export function trackAccess(kind, who, iu = "") {
   if (!who || window.top !== window) return;   // 確認用ページ（iframe）の中では残さない
   if (who !== accessWho) accessAt = 0;
-  accessKind = kind; accessWho = who;
+  accessKind = kind; accessWho = who; accessIu = iu || "";
   logAccess();
   if (!accessListening) { accessListening = true; document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") logAccess(); }); }
 }

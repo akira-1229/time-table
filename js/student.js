@@ -38,7 +38,7 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T); }
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T, S.student.instructorUid); }
   } catch (e) { fail(friendlyError(e)); }
 }
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する

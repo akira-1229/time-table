@@ -27,15 +27,17 @@ service cloud.firestore {
         || request.resource.data.lastAccessAt == request.time;
     }
 
-    // アクセス記録（アプリを開いた記録）。本人が追加するだけで、見られるのは管理者だけ。古い分は Apps Script が消す
+    // アクセス記録（アプリを開いた記録）。本人が追加するだけ。見られるのは管理者と、教習生の分はその担当指導員（iu）。古い分は Apps Script が消す
     match /access/{id} {
-      allow read, delete: if isAdmin();
-      allow create: if request.resource.data.keys().hasOnly(['kind', 'who', 'at', 'device'])
+      allow read: if isAdmin() || (isInstructor() && resource.data.iu == request.auth.uid);
+      allow delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['kind', 'who', 'at', 'device', 'iu'])
         && request.resource.data.at == request.time
         && request.resource.data.device is string && request.resource.data.device.size() <= 40
         && ((request.resource.data.kind == 'student'
               && exists(/databases/$(database)/documents/students/$(request.resource.data.who))
-              && studentData(request.resource.data.who).active == true)
+              && studentData(request.resource.data.who).active == true
+              && (!('iu' in request.resource.data) || request.resource.data.iu == studentData(request.resource.data.who).instructorUid))
           || (request.resource.data.kind == 'instructor' && isInstructor() && request.resource.data.who == request.auth.uid));
       allow update: if false;
     }
