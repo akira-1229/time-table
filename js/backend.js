@@ -14,7 +14,7 @@ const appMod = demo || appFb, fsMod = demo || fsFb, authMod = demo || authFb, ms
 export const { initializeApp } = appMod;
 export const {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, collection, collectionGroup,
-  query, where, serverTimestamp, writeBatch, Timestamp, onSnapshot, increment
+  query, where, orderBy, limit, serverTimestamp, writeBatch, Timestamp, onSnapshot, increment
 } = fsMod;
 export const { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } = authMod;
 export const { getMessaging, getToken, isSupported, onMessage } = msgMod;

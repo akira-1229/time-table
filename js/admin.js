@@ -5,9 +5,9 @@
 //   ログインは指導員の画面のものをそのまま使い、ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, serverTimestamp, writeBatch
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, applyView, lookSettingsHtml, pcTable, nextSort, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -23,7 +23,7 @@ function newToken() {
 const studentUrl = tok => `${CFG.appUrl}student.html?t=${encodeURIComponent(tok)}`;
 const instructorUrl = i => `${CFG.appUrl}instructor.html${i.email ? `?e=${encodeURIComponent(i.email)}` : ""}`;
 const iname = uid => (S.instructors.find(i => i.uid === uid) || {}).name || "（未設定）";
-const tabs = () => S.isAdmin ? [["students", `教習生（${S.students.length}人）`], ["instructors", `指導員（${S.instructors.length}人）`], ["settings", "設定"]] : [["students", `担当の教習生（${S.students.length}人）`]];
+const tabs = () => S.isAdmin ? [["students", `教習生（${S.students.length}人）`], ["instructors", `指導員（${S.instructors.length}人）`], ["access", "アクセス記録"], ["settings", "設定"]] : [["students", `担当の教習生（${S.students.length}人）`]];
 
 // 教習生の管理（指導員）はここでログインしない。指導員の画面へ案内する
 function gate(msg) { root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(msg)}</div></div></section>`; }
@@ -73,7 +73,7 @@ function render() {
   let h = `<div class="topbar noprint"><div><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small></div>
     <span>${S.isInst ? "" : `<button class="linkbtn" data-act="logout">ログアウト</button>`}</span></div>
   ${tabs().length < 2 ? "" : `<div class="seg noprint" role="group" style="grid-template-columns:repeat(${tabs().length},1fr)">${tabs().map(([v, t]) => `<button aria-pressed="${S.tab === v}" data-act="tab" data-v="${v}">${t}</button>`).join("")}</div>`}`;
-  h += S.tab === "instructors" ? renderInstructors() : S.tab === "settings" ? renderSettings() : renderStudents();
+  h += S.tab === "instructors" ? renderInstructors() : S.tab === "settings" ? renderSettings() : S.tab === "access" ? renderAccess() : renderStudents();
   root.innerHTML = h + (S.isAdmin ? `<p class="center noprint">${viewToggle()}</p>` : "");
 }
 const who = () => S.isAdmin ? `${CFG.schoolName}・管理者` : `${S.me ? S.me.name : ""} 指導員の担当（${S.students.length}人）`;
@@ -99,7 +99,7 @@ const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(s[k])}</span>` : ""; };
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
-  const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
+  const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "access" ? `<h2>アクセス記録</h2><div style="max-width:760px">${renderAccess()}</div>` : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
   // 指導員の画面では、左端のタブ（画面の切り替え）は指導員の画面のものを使う
   if (S.isInst) { root.innerHTML = `<main class="pcmain"><div class="noprint">${main}</div><div id="printArea"></div></main>`; return; }
   root.innerHTML = `<div class="pcl"><aside class="pcside noprint"><h1>${S.isAdmin ? "管理画面" : "教習生の管理"}</h1><small>${esc(who())}</small>
@@ -160,6 +160,47 @@ function renderSettings() {
   return `<section class="panel"><div class="body setpage"><h3 style="margin-top:0">この端末の表示</h3>${lookSettingsHtml()}</div></section>
   <section class="panel"><div class="body"><h3 style="margin-top:0">学園のルール</h3><div class="banner info">いまの設定です。変更したい時は、設定ファイル（js/config.js）を書き換えます。</div>
   <div class="list">${rows.map(([k, v]) => `<div class="item" style="display:block"><div class="s">${esc(k)}</div><div class="t">${esc(v)}</div></div>`).join("")}</div></div></section>`;
+}
+
+/* ---------- アクセス記録（管理者だけ） ---------- */
+// 教習生・指導員がアプリを開いた記録（access コレクション）。古い分は Apps Script が毎朝消す（ACCESS_KEEP_DAYS、省略時90日）
+const dt = ts => { if (!ts || !ts.toDate) return ""; const d = ts.toDate(), p2 = n => String(n).padStart(2, "0"); return `${d.getMonth() + 1}月${d.getDate()}日(${WD[d.getDay()]}) ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const ms = ts => ts && ts.toMillis ? ts.toMillis() : 0;
+const accName = (k, w) => { const x = k === "student" ? S.students.find(s => s.token === w) : S.instructors.find(i => i.uid === w); return x ? x.name : "（削除済み）"; };
+async function loadRecent() {
+  S.accRecent = null; render();
+  try { S.accRecent = (await getDocs(query(collection(db, "access"), orderBy("at", "desc"), limit(100)))).docs.map(d => d.data()); }
+  catch (e) { S.accRecent = []; toast(friendlyError(e)); }
+  if (S.tab === "access") render();
+}
+function renderAccess() {
+  const k = S.accKind || "student";
+  const people = (k === "student" ? S.students.map(s => ({ w: s.token, name: s.name, sub: s.studentNo ? `教習生番号 ${s.studentNo}` : "", at: s.lastAccessAt }))
+    : S.instructors.map(i => ({ w: i.uid, name: i.name, sub: i.email || "", at: i.lastAccessAt }))).sort((a, b) => ms(b.at) - ms(a.at));
+  const never = people.filter(x => !x.at).length;
+  let h = `<section class="panel noprint"><div class="body">
+  <div class="seg" role="group" aria-label="対象"><button aria-pressed="${k === "student"}" data-act="accKind" data-v="student">教習生</button><button aria-pressed="${k === "instructor"}" data-act="accKind" data-v="instructor">指導員</button></div>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 8px">アプリを開いた日時の記録です（開いた時と、10分以上たって戻ってきた時に1件）。記録は${CFG.accessKeepDays || 90}日分残し、それより古いものは毎朝自動で消します。名前を押すと、その人の記録をすべて見られます。</p>
+  <h3>最後に開いた日時（${people.length}人${never ? `・まだ開いていない人 ${never}人` : ""}）</h3><div class="list">`;
+  people.forEach(x => { h += `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="accHist" data-k="${k}" data-w="${esc(x.w)}"><div><div class="t">${esc(x.name)}</div><div class="s">${esc(x.sub)}</div></div><span class="${x.at ? "" : "tag wait"}" style="font-size:13px;white-space:nowrap">${x.at ? dt(x.at) : "まだ開いていません"}</span></button>`; });
+  h += `</div><h3>最近のアクセス（全員・新しい順）<button class="linkbtn" data-act="accReload" style="margin-left:8px;font-size:13px">更新</button></h3>`;
+  if (!S.accRecent) h += `<div class="hist"><div>読み込み中…</div></div>`;
+  else {
+    const list = S.accRecent.filter(r => r.kind === k);
+    h += list.length ? `<div class="hist">${list.map(r => `<div>${dt(r.at)}　${esc(accName(r.kind, r.who))}<span style="color:var(--muted);font-size:12px">　${esc(r.device || "")}</span></div>`).join("")}</div>` : `<div class="hist"><div>まだ記録がありません。</div></div>`;
+  }
+  return h + `</div></section>`;
+}
+async function accessHistory(k, w) {
+  sheet(`<h3>${esc(accName(k, w))} さんのアクセス記録</h3><div class="hist"><div>読み込み中…</div></div>`);
+  try {
+    const list = (await getDocs(query(collection(db, "access"), where("who", "==", w)))).docs.map(d => d.data()).sort((a, b) => ms(b.at) - ms(a.at));
+    const d30 = Date.now() - 30 * 86400000, n30 = list.filter(r => ms(r.at) >= d30).length;
+    sheet(`<h3>${esc(accName(k, w))} さんのアクセス記録</h3>
+      <p style="font-size:13px;color:var(--muted);margin-top:0">全${list.length}件（${CFG.accessKeepDays || 90}日分まで）・最近30日で${n30}回</p>
+      ${list.length ? `<div class="hist" style="max-height:55vh;overflow:auto">${list.map(r => `<div>${dt(r.at)}<span style="color:var(--muted);font-size:12px">　${esc(r.device || "")}</span></div>`).join("")}</div>` : `<div class="hist"><div>まだ記録がありません。</div></div>`}
+      <button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
+  } catch (e) { closeSheet(); toast(friendlyError(e)); }
 }
 
 function renderInstructors() {
@@ -312,7 +353,10 @@ document.addEventListener("click", async e => {
     if (a === "login") { try { await signInWithEmailAndPassword(auth, document.getElementById("em").value.trim(), document.getElementById("pw").value); } catch (err) { renderLogin("メールアドレスかパスワードが違います。"); } }
     else if (a === "logout") await signOut(auth);
     else if (a === "retry") location.reload();
-    else if (a === "tab") { S.tab = t.dataset.v; S.sort = { k: t.dataset.v === "instructors" ? "name" : "studentNo", dir: 1 }; render(); }
+    else if (a === "tab") { S.tab = t.dataset.v; S.sort = { k: t.dataset.v === "instructors" ? "name" : "studentNo", dir: 1 }; render(); if (S.tab === "access") loadRecent(); }
+    else if (a === "accKind") { S.accKind = t.dataset.v; render(); }
+    else if (a === "accReload") loadRecent();
+    else if (a === "accHist") accessHistory(t.dataset.k, t.dataset.w);
     else if (a === "printInst") printInstructorCards();
     else if (a === "new") editSheet(null);
     else if (a === "edit") editSheet(S.students.find(s => s.token === t.dataset.s));

@@ -21,6 +21,25 @@ service cloud.firestore {
         || (request.resource.data.fcmTokens is list && request.resource.data.fcmTokens.size() <= 5);
     }
 
+    // 最後に開いた日時（lastAccessAt）は、書き込んだ時刻そのものしか入れられない
+    function accessTimeOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastAccessAt'])
+        || request.resource.data.lastAccessAt == request.time;
+    }
+
+    // アクセス記録（アプリを開いた記録）。本人が追加するだけで、見られるのは管理者だけ。古い分は Apps Script が消す
+    match /access/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['kind', 'who', 'at', 'device'])
+        && request.resource.data.at == request.time
+        && request.resource.data.device is string && request.resource.data.device.size() <= 40
+        && ((request.resource.data.kind == 'student'
+              && exists(/databases/$(database)/documents/students/$(request.resource.data.who))
+              && studentData(request.resource.data.who).active == true)
+          || (request.resource.data.kind == 'instructor' && isInstructor() && request.resource.data.who == request.auth.uid));
+      allow update: if false;
+    }
+
     // 管理者の一覧：手動で登録。本人が「自分が管理者か」を確認できるだけ
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
@@ -32,7 +51,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        || (signedIn() && request.auth.uid == uid && changedOnly(['fcmTokens']) && validTokens());
+        || (signedIn() && request.auth.uid == uid && changedOnly(['fcmTokens', 'lastAccessAt']) && validTokens() && accessTimeOk());
     }
 
     // 教習生（ドキュメントIDがQRのキー）
@@ -43,7 +62,7 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
       allow update: if isAdmin()
         || (isInstructor() && resource.data.instructorUid == request.auth.uid && request.resource.data.instructorUid == request.auth.uid)
-        || (resource.data.active == true && changedOnly(['fcmTokens', 'ackAt']) && validTokens());
+        || (resource.data.active == true && changedOnly(['fcmTokens', 'ackAt', 'lastAccessAt']) && validTokens() && accessTimeOk());
 
       // 月ごとの空き時間
       match /months/{ym} {

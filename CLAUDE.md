@@ -36,7 +36,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   index.html               入口（指導員・管理画面へのリンク）。Firebase切り替え前は並べて確認ページへのリンクとデータ初期化ボタンも出す
   student.html             教習生（QRの ?t=キー で開く。ログインなし）。空き時間の表は縦が時限・横が日付（横スクロール、時限の列は左に固定）。アプリを開くたび（ホーム画面から戻った時も10分以上たっていれば）「次の教習」（確定済み・未実施で一番早い予約の日付・時限）をポップアップで出し、OKで閉じる。どのタブでも上に「次の教習」の帯（押すとポップアップ）（student.js の nextLesson / showNextLesson）。画面の下にいつも出るタブ：左「空き時間の登録」、真ん中「教習の進み具合」、右「設定」（明るさ・文字の大きさ・通知・ホーム画面に追加・本人の情報・使い方・学園に電話）
   instructor.html          指導員の画面（ログイン必須。**指導員がログインするのはここだけ**）。ログイン中は切り替えタブ（#tabnav）をいつも出す：スマホは画面の下、PCは左端に「教習生の管理」「予約の管理」「設定」（instructor.js の showView / renderNav / renderSettings。#manage・#settings で直接開く）。PCで開くと予約の管理もPC表示（左にマス目、右に集計・お知らせ・一覧）。設定は端末ごと（localStorage の timetable_theme・fontsize・view・startweek・startmode・balopen。見た目の部分は common.js の lookSettingsHtml を管理画面と共通で使い、boot.js が描く前に反映）。「予約の割り当て」と「教習生の管理」（自分の担当の教習生の登録・編集・削除・QR。新規登録・再発行の直後と編集画面の「QRコードを表示する」で、その人のQRを大きく出す＝その場で読み取ってもらう）を上のボタンで切り替える。教習生の管理は js/admin.js を data-mode="staff" で #mng に描く（#manage で直接開く）。指導員用QRは instructor.html?e=メールアドレス（ログイン欄に入れておくだけ）
-  admin.html               大元の管理画面。**ログインするのは管理者（依頼者）だけ**。指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、設定。指導員がログインしようとしても入れない
+  admin.html               大元の管理画面。**ログインするのは管理者（依頼者）だけ**。指導員の登録・削除と指導員用QR、全員の教習生（登録・編集・削除・担当の付け替え・QR）、アクセス記録（教習生／指導員を切り替え。最後に開いた日時の一覧、最近100件、名前を押すとその人の全記録）、設定。指導員がログインしようとしても入れない
   manage.html              旧「教習生の管理」。instructor.html#manage へ転送するだけ
   guide-student.html       教習生用の使い方（実際の画面に番号付きの注釈）。教習生画面の上の「使い方」から開く
   guide-instructor.html    指導員用の使い方。指導員画面の上とログイン画面の「使い方」から開く。画像は guide/*.jpg（デモモードで Playwright 撮影。画面を変えたら撮り直す）
@@ -55,7 +55,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/admin.js              大元の管理画面と、指導員の画面に組み込んだ「教習生の管理」の両方（body の data-mode で切り替え）
 firestore.rules            セキュリティルール
 firestore.indexes.json     必要な索引（コレクショングループ2つ＋students）
-apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、期限のお知らせ、検定日のお知らせ、テスト送信）
+apps-script/Code.gs        通知係（outbox の送信、締切前リマインド、期限のお知らせ、検定日のお知らせ、古いアクセス記録の削除、テスト送信）
 apps-script/appsscript.json
 SETUP.md                   セットアップ手順書（日本語。依頼者が読む）
 ```
@@ -69,11 +69,12 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | パス | 内容 | 書く人 |
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
-| `instructors/{uid}` | `name, email, fcmTokens[]` | 管理者（fcmTokens は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone, hwDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt のみ |
+| `instructors/{uid}` | `name, email, fcmTokens[], lastAccessAt` | 管理者（fcmTokens・lastAccessAt は本人） |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone, hwDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt・lastAccessAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"/"hw3"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
+| `access/{id}` | アクセス記録 `kind(student/instructor), who（QRのキー／ユーザーUID）, at, device（例 iPhone・ホーム画面）`。アプリを開いた時と10分以上たって戻った時に1件（`common.js` の `trackAccess`）。あわせて本人の `students/{t}`・`instructors/{uid}` の `lastAccessAt` を更新。**古い記録は Apps Script の `accessCleanup_` が毎朝、古い順に消す（`ACCESS_KEEP_DAYS`、省略時90日。無料枠に収めるため。依頼者の絶対条件）** | 本人（追加のみ）。読む・消すのは管理者 |
 | `outbox/{id}` | 通知の送信待ち `to(student/instructor), type, studentToken, instructorUid, title, body, sent` | 指導員（教習生宛）／教習生（キャンセル希望のみ指導員宛）。読み出しは Apps Script だけ |
 
 セキュリティの考え方：教習生はキーを知っている本人だけが自分の分を get でき、一覧取得はできない。予約の下書き（draft）は教習生に見えない。指導員は自分の担当だけ。Apps Script はサービスアカウント（ルール対象外）。**サービスアカウントの秘密鍵はスクリプトプロパティだけに置き、絶対にリポジトリへ入れない。**

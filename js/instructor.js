@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -43,7 +43,7 @@ onAuthStateChanged(auth, async user => {
   try {
     const me = await getDoc(doc(db, "instructors", user.uid));
     if (!me.exists()) { loginMsg = `指導員として登録されていません。事務所に確認してください。（このアカウントのユーザーUID：${user.uid}）`; await signOut(auth); return; }
-    S.me = me.data(); renderNav();
+    S.me = me.data(); renderNav(); trackAccess("instructor", user.uid);
     listenForeground(() => loadWeek());
     watchCancelReqs();
     await loadWeek();

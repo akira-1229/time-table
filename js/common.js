@@ -1,6 +1,6 @@
 // 共通部品：Firebaseの初期化、日付、画面の小物、プッシュ通知
 import { initializeApp } from "./backend.js";
-import { getFirestore } from "./backend.js";
+import { getFirestore, doc, addDoc, updateDoc, collection, serverTimestamp } from "./backend.js";
 import { getMessaging, getToken, isSupported, onMessage } from "./backend.js";
 
 export { DEMO, DEMO_USERS, DEMO_STUDENTS, resetDemo } from "./backend.js";
@@ -347,3 +347,27 @@ if (typeof document !== "undefined") document.addEventListener("click", e => {
   applyLook();
   document.dispatchEvent(new CustomEvent("pref:change", { detail: { k, v } }));
 });
+
+/* ---------- アクセス記録（管理画面の「アクセス記録」で見る） ---------- */
+// アプリを開いた時と、ホーム画面などから10分以上たって戻ってきた時に1件ずつ残す（access コレクション）
+// kind："student"（who＝QRのキー）／"instructor"（who＝ユーザーUID）。あわせて本人のドキュメントに最後に開いた日時（lastAccessAt）を書く
+// 古い記録は Apps Script が毎朝消す（ACCESS_KEEP_DAYS 日より前。省略時90日）
+export const deviceName = () => {
+  const u = navigator.userAgent;
+  const d = /iPhone/.test(u) ? "iPhone" : /iPad|Macintosh/.test(u) && navigator.maxTouchPoints > 1 ? "iPad" : /Android/.test(u) ? "Android" : "PC";
+  return `${d}・${isStandalone() ? "ホーム画面" : "ブラウザ"}`;
+};
+let accessAt = 0, accessWho = null, accessKind = "", accessListening = false;
+function logAccess() {
+  if (!accessWho || Date.now() - accessAt < 10 * 60 * 1000) return;
+  accessAt = Date.now();
+  addDoc(collection(db, "access"), { kind: accessKind, who: accessWho, at: serverTimestamp(), device: deviceName() }).catch(() => { });
+  updateDoc(doc(db, accessKind === "student" ? "students" : "instructors", accessWho), { lastAccessAt: serverTimestamp() }).catch(() => { });
+}
+export function trackAccess(kind, who) {
+  if (!who || window.top !== window) return;   // 確認用ページ（iframe）の中では残さない
+  if (who !== accessWho) accessAt = 0;
+  accessKind = kind; accessWho = who;
+  logAccess();
+  if (!accessListening) { accessListening = true; document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") logAccess(); }); }
+}

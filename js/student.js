@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline
+  inputDeadlineOf, pastInputDeadline, trackAccess
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -38,7 +38,7 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); }
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T); }
   } catch (e) { fail(friendlyError(e)); }
 }
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する

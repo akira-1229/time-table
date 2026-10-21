@@ -79,7 +79,9 @@ export function doc(first, ...segs) {
 export const collection = (db, ...segs) => ({ type: "col", path: P(segs) });
 export const collectionGroup = (db, id) => ({ type: "group", id });
 export const where = (f, op, v) => ({ f, op, v });
-export const query = (c, ...w) => ({ ...c, w });
+export const orderBy = (f, dir = "asc") => ({ ob: f, dir });
+export const limit = n => ({ lim: n });
+export const query = (c, ...w) => ({ ...c, w: w.filter(x => x.f), ob: w.find(x => x.ob), lim: (w.find(x => x.lim) || {}).lim });
 export const serverTimestamp = () => Timestamp.now();
 export const arrayUnion = (...v) => ({ __union: v });
 export const increment = n => ({ __inc: n });
@@ -95,6 +97,11 @@ function runQuery(q) {
     if ((q.w || []).every(w => w.op === "==" ? (d[w.f] ?? null) === w.v : w.op === "in" ? w.v.includes(d[w.f]) : true))
       res.push({ id: seg.at(-1), ref: mkDoc(p), data: () => out(d) });
   }
+  if (q.ob) {
+    const v = x => { const d = x.data()[q.ob.ob]; return d && d.toMillis ? d.toMillis() : d; };
+    res.sort((a, b) => (v(a) > v(b) ? 1 : v(a) < v(b) ? -1 : 0) * (q.ob.dir === "desc" ? -1 : 1));
+  }
+  if (q.lim) res.splice(q.lim);
   return { docs: res, size: res.length, empty: !res.length };
 }
 const merge = (cur, d) => { const n = { ...cur }; Object.entries(d).forEach(([k, v]) => { n[k] = v && v.__union ? [...new Set([...(cur[k] || []), ...v.__union])] : v && v.__inc !== undefined ? (cur[k] || 0) + v.__inc : v; }); return n; };

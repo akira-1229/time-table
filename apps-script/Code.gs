@@ -5,6 +5,7 @@
  * ・dailyReminder：毎朝起動。締切（教習生ごと）の数日前と前日に、その月の分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
+ *                  アクセス記録（access）のうち、ACCESS_KEEP_DAYS 日より古いものを消す（無料枠の中に収めるため）
  *
  * 必要なスクリプトプロパティ（プロジェクトの設定 → スクリプト プロパティ）
  *   PROJECT_ID   … FirebaseのプロジェクトID
@@ -14,6 +15,7 @@
  *   DEADLINE_DAY … 次月分の入力締切日（例：20）
  *   REMIND_DAYS  … 締切の何日前に知らせるか（カンマ区切り。例：3,1）
  *   EXPIRY_ALERT … 教習期限・仮免期限のいつ知らせるか（カンマ区切り。m＝ヶ月前、w＝週間前、d＝日前。省略時 2m,1m,2w）
+ *   ACCESS_KEEP_DAYS … アクセス記録を残す日数（省略時 90）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -159,6 +161,27 @@ function dailyReminder() {
   try { inputReminder_(); } catch (e) { Logger.log('締切のお知らせでエラー: ' + e); }
   try { expiryAlert_(); } catch (e) { Logger.log('期限のお知らせでエラー: ' + e); }
   try { kenteiAlert_(); } catch (e) { Logger.log('検定日のお知らせでエラー: ' + e); }
+  try { accessCleanup_(); } catch (e) { Logger.log('アクセス記録の削除でエラー: ' + e); }
+}
+// 古いアクセス記録を、古い順に消す（1回に500件ずつ、最大20回＝1万件まで。残りは翌朝）
+function accessCleanup_() {
+  const days = Number(prop('ACCESS_KEEP_DAYS') || 90);
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  let n = 0;
+  for (let i = 0; i < 20; i++) {
+    const old = query_({
+      from: [{ collectionId: 'access' }],
+      where: { fieldFilter: { field: { fieldPath: 'at' }, op: 'LESS_THAN', value: { timestampValue: cutoff } } },
+      orderBy: [{ field: { fieldPath: 'at' }, direction: 'ASCENDING' }],
+      limit: 500
+    });
+    if (!old.length) break;
+    const r = api_(`${FS_BASE()}:commit`, 'post', { writes: old.map(d => ({ delete: d.name })) });
+    if (r.code !== 200) { Logger.log('アクセス記録の削除に失敗: ' + JSON.stringify(r.json)); break; }
+    n += old.length;
+    if (old.length < 500) break;
+  }
+  Logger.log(`アクセス記録：${days}日より前の${n}件を削除`);
 }
 function inputReminder_() {
   const now = new Date(Utilities.formatDate(new Date(), 'Asia/Tokyo', "yyyy/MM/dd"));

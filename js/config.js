@@ -86,5 +86,6 @@ self.APP_CONFIG = {
     hwSoloSets: [[7, 8]],           // 単独高速は 7・8 を警告（8・9 は季節に関係なく入れられない）
     hwSoloNo: [[9, 10]]             // 単独高速の 9・10 はこの期間は入れられない（強制も不可）
   },
+  accessKeepDays: 90,               // アクセス記録を残す日数（表示用。実際に消すのは Apps Script のスクリプトプロパティ ACCESS_KEEP_DAYS。そろえておく）
   maxFcmTokens: 5
 };
