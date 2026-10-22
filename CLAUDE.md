@@ -70,7 +70,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | --- | --- | --- |
 | `admins/{uid}` | 管理者の印（コンソールで手動作成） | なし |
 | `instructors/{uid}` | `name, email, fcmTokens[], lastAccessAt` | 管理者（fcmTokens・lastAccessAt は本人） |
-| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone, hwDone`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt・lastAccessAt のみ |
+| `students/{t}` | **ドキュメントID `t` がQRのキー（推測不能な24文字）**。`studentNo（数字4桁。全角は半角に直す。空でも可）, name, stage(1/2), instructorUid, deadline(YYYY-MM-DD), active, fcmTokens[], lastNotifiedAt, ackAt, priorDone（今の段階でこれまでに受けた時限数。転校で第2段階から始める人もここで入れる）, doneCount（実施チェックした時限数）, kikenDone, hwDone, minLessons1（第1段階の最低教習時限。空なら config の12）`。登録フォームの項目：`name`（漢字・必須）, `nameKana`（フリガナ・必須。カタカナで保存、ひらがなは自動変換）, `birthDate`（生年月日。年齢は `common.js` の `ageOf` で今日時点を計算するので自動で上がる）, （性別 `gender` は入力しない。依頼者指定）, `inputDeadline`（空き時間の入力締切。業務フロー1）, `license`（希望免許）, `heldLicense`（所持免許）, `startDate`（教習開始日）, `classStart`（学科開始日）, `deadline`（教習期限日）, `skillStart`（技能開始日）, `karimenIssued`（仮免交付日）, `karimenExpiry`（仮免期限日。仮免交付日を入れると自動で入る：6ヶ月後の同じ日の前日、無い月は末日） | 担当指導員（自分の担当として登録・編集・削除。担当の付け替えは管理者のみ）／管理者／本人は fcmTokens・ackAt・lastAccessAt のみ |
 | `students/{t}/months/{YYYY-MM}` | `slots: ["日-時限", …]`（例 `"12-5"`）, `updatedAt`, `late`（締切後の変更） | 本人 |
 | `students/{t}/bookings/{id}` | `instructorUid, date, period, weekId(週の月曜 YYYY-MM-DD), status(draft/confirmed/cancelled), cancelRequested, highway, forced, lessonType("kiken"/"hwSolo"/"hw3"), pairId, stage（予約時の段階）, result(null/"done"/"absent"), resultAt` | 担当指導員（本人は cancelRequested のみ） |
 | `weeks/{uid}_{weekId}` | 週の確定記録 | 指導員本人 |
@@ -82,7 +82,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 ## 業務フロー
 
 1. 教習生：毎月、次月分の空き時間を登録（締切 `deadlineDay`＝毎月20日。仮の値。**教習生ごとに変えられる**：指導員の「教習生の管理」→編集の「空き時間の入力締切」＝`students/{t}.inputDeadline`（`"p25"`前の月の25日／`"pe"`前の月の末日／`"c3"`その月の3日／空＝標準）。判定は `common.js` の `inputDeadlineOf`・`pastInputDeadline`、Apps Script の締切前リマインドも教習生ごとの締切で送る）。今月の分は（締切が「その月の○日」でまだ来ていない人を除き）締切後扱い。締切までは自由に変更可。**締切後は◯を付けるのはOK、外すのは不可**（`noRemoveAfterDeadline`。外したい時は学園に電話。その画面を開いてから付けた◯だけは付け間違いとして外せる。今は画面側だけの制限で、`firestore.rules` では止めていない）。締切後の変更は `late` を立て、指導員側に「締切後に変更あり」
-2. 指導員：週ごと（`openDays` 月〜土）にマス目で割り当てる。確定前は何度入れ直しても通知しない。教習生の◯・キャンセル希望は `onSnapshot` でリアルタイムに反映。未確定の予約の枠から教習生が◯を外すと、赤い「空き取消」と警告を出す
+2. 指導員：週ごと（`openDays` 月〜日。日曜も入れる。依頼者指定）にマス目で割り当てる。確定前は何度入れ直しても通知しない。教習生の◯・キャンセル希望は `onSnapshot` でリアルタイムに反映。未確定の予約の枠から教習生が◯を外すと、赤い「空き取消」と警告を出す
 3. 「この週の予約を確定して通知」→ 教習生1人につき **週1回まとめて** 通知
 4. 確定後の追加・取り消し・キャンセル承認/却下は **その都度** 通知
 5. 予約済みの枠は教習生側でロック（教習生画面も確定・取り消しを `onSnapshot` でリアルタイム反映）。教習生は「キャンセル希望」を送れる（指導員に通知）→ 指導員が承認/却下
@@ -109,7 +109,7 @@ SETUP.md                   セットアップ手順書（日本語。依頼者�
 | 危険予測 | 2時限連続の特別な教習（`lessonType: "kiken"`、2件を `pairId` で1組）。昼休み・20分休憩をまたぐ組（3・4、5・6、8・9）は **絶対に不可**。可：1・2／2・3／4・5／6・7／7・8／9・10。ほかの予約と合わせて連続3時限になる組も不可。取り消しは2時限まとめて | `kiken.noPairAfter: [3,5,8]` |
 | 単独高速 | 1人で高速教習を2時限連続（`lessonType: "hwSolo"`、`highway: true`、2件を `pairId` で1組）。単独でも入れられる。3・4（昼休み）と 8・9（季節に関係なく）は不可、5・6 はOK（依頼者確認済み）。ほかの予約と合わせて連続3時限になる組は不可。取り消しは2時限まとめて | `hwSolo.noPairAfter: [3, 8]` |
 | 危険予測→単独高速 | 危険予測 4・5限 → 単独高速 6・7限 の組に限り、1日4時限・連続でもOK（段階を問わず。1日の上限も超えてよい）。順番は危険予測→単独高速のみで、単独高速の直後に危険予測は不可 | `pairCombos` |
-| 最低教習時限 | 第1段階 12、第2段階 19（12時限目が危険予測、13〜15が高速教習。単独高速なら13・14で、その後15〜19）。超えると延長料金。危険予測は2時限使うが1時限として数える | `lessons` |
+| 最低教習時限 | 第1段階 12（**教習生ごとに変えられる**：編集画面の「第1段階の最低教習時限」＝`students/{t}.minLessons1`、空なら12。`common.js` の `lessonMin(stage, st)`）、第2段階 19（12時限目が危険予測、13〜15が高速教習。単独高速なら13・14で、その後15〜19）。超えると延長料金。危険予測は2時限使うが1時限として数える | `lessons` |
 | 危険予測の順番 | **ちょうど12時限目のみ**。12時限目に通常や単独高速が来る予約、危険予測が12時限目からずれる予約は入れられない。欠席などで既にずれている時は警告を出し、直す操作は止めない | `lessons[2].kikenNo` |
 | 段階 | 第1段階には高速教習・危険予測・単独高速は無い（依頼者確認済み） | `specialStages: [2]` |
 | 学科の受講確認 | 第2段階の10時限目は学科15番、13時限目（高速教習）は学科16番を受講していないと受けられない。その時限目に当たる予約を入れる時に「この教習は学科の○番を受講していないと受けることはできませんが、受講済ですか？」を出す（ボタンはOKだけ。外側を押すとやめる） | `gakkaCheck` / `instructor.js` の `gakkaAsk` |
@@ -142,7 +142,6 @@ Firebase の準備ができたら `demo: false` にして Firebase の値を入�
 - [ ] 実機のAndroidで「ホーム画面に追加する」ボタン（beforeinstallprompt）が出て追加できるか（Playwright ではインストール可能判定がエラーなしまでは確認済み）
 - [ ] iPhoneで「ホーム画面に追加」したアイコンから開いた時に `?t=` が引き継がれるか（`localStorage` の控えもあるが、iOSはホーム画面アプリとSafariで保存領域が別）
 - [ ] 入力締切日（今は20日）、キャンセルの期限・キャンセル料（学園の電話番号は 058-387-4171 で確定）
-- [ ] 予約を入れる曜日（今は月〜土。日曜を含むか）
 - [ ] 第1段階の連続2時限に制限があるか（今は制限なし）
 - [ ] 指導員が「確定」する期限
 - [ ] 希望免許・所持免許の候補（`licenseTypes`・`heldLicenseTypes` は仮）。仮免期限日の自動計算（6ヶ月後の前日）が学園の扱いと合っているか

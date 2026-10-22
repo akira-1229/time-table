@@ -127,7 +127,7 @@ function seqCheck(s, extra) {
   return after.ok ? "" : after.reason;
 }
 const itemOf = b => { const s = ST(b.token); return s ? planOf(s).items.find(it => it.bookings.some(x => x.id === b.id)) : null; };
-const noText = (s, it) => it ? `${noRange(it)}時限目${it.no + it.units - 1 > lessonMin(s.stage) ? "（延長）" : ""}` : "";
+const noText = (s, it) => it ? `${noRange(it)}時限目${it.no + it.units - 1 > lessonMin(s.stage, s) ? "（延長）" : ""}` : "";
 
 /* ---------- 判定 ---------- */
 const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p);
@@ -239,7 +239,7 @@ const candidates = (ds, p) => S.students.filter(s => isFree(s.token, ds, p)).sor
 const daysLeft = s => s.deadline ? Math.round((parseDate(s.deadline) - today()) / 86400000) : null;
 const unacked = s => s.lastNotifiedAt && (!s.ackAt || s.lastNotifiedAt.toMillis() > s.ackAt.toMillis());
 const info = s => {
-  const dl = daysLeft(s), pl = planOf(s), min = lessonMin(s.stage);
+  const dl = daysLeft(s), pl = planOf(s), min = lessonMin(s.stage, s);
   return `第${s.stage}段階・実施${doneOf(s)}/${min}時限${pl.items.length ? `・予定${pl.total - doneOf(s)}` : ""}${min && pl.total > min ? "・延長あり" : ""}・今週${weekCount(s.token)}時限${dl !== null ? `・期限まであと${dl}日` : ""}`;
 };
 

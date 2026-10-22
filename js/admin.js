@@ -114,7 +114,7 @@ function renderStudentsPC() {
     { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
-    { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage)}`, sort: s => doneOf(s) / (lessonMin(s.stage) || 1) },
+    { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage, s)}`, sort: s => doneOf(s) / (lessonMin(s.stage, s) || 1) },
     ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => distOf(kenteiOf(s)) }]),
     { k: "startDate", t: "教習開始", sort: s => distOf(s.startDate) }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
@@ -137,7 +137,7 @@ function renderStudents() {
   <div class="field"><label for="msort">並べ替え</label><select id="msort">${SORTS.filter(x => !(x[4] && S.isAdmin)).map(([k, t]) => `<option value="${k}" ${S.msort === k ? "selected" : ""}>${t}</option>`).join("")}</select></div></div>
   <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th>${S.isAdmin ? "<th>担当</th>" : ""}<th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage, s)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
@@ -283,8 +283,10 @@ function editSheet(s) {
   <div class="row"><div class="field"><label for="f_hd">高速教習</label><select id="f_hd">${opt(0, s.hwDone ? 1 : 0, "まだ")}${opt(1, s.hwDone ? 1 : 0, "受講済み")}</select></div><div></div></div>
   <div class="field"><label for="f_idl">空き時間の入力締切</label><select id="f_idl">${idlOptions(s.inputDeadline || "")}</select>
     <span style="font-size:12px;color:var(--muted)">社会人などで月末・月初に予定が分かる人は、締切を遅らせてください。締切を過ぎると、教習生は◯を外せなくなります。</span></div>
+  <div class="row"><div class="field"><label for="f_min1">第1段階の最低教習時限</label><input id="f_min1" type="number" min="1" max="40" inputmode="numeric" value="${esc(s.minLessons1 || "")}" placeholder="${(CFG.lessons[1] || {}).min || 12}（標準）"></div><div></div></div>
+  <p style="font-size:12px;color:var(--muted);margin:-6px 0 10px">空欄なら標準の${(CFG.lessons[1] || {}).min || 12}時限です。みきわめのタイミングと進み具合の表示がこの時限数で決まります。</p>
   ${mkFields(s)}
-  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage)}時限）。段階を変えると、時限数・危険予測・高速教習は0から数え直します。</p>`}
+  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage, s)}時限）。段階を変えると、時限数・危険予測・高速教習は0から数え直します。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
@@ -386,6 +388,7 @@ document.addEventListener("click", async e => {
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
       data.kikenDone = document.getElementById("f_kd").value === "1";
       data.hwDone = document.getElementById("f_hd").value === "1";
+      { const m1 = num("f_min1", 40); data.minLessons1 = m1 ? m1 : null; }
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
       if (old && old.stage !== data.stage) {
         // 段階が変わったら、その段階の時限数は0から数え直す（入力欄を変えていなければ0にする）

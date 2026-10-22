@@ -174,7 +174,7 @@ function renderCal() {
 
 function renderBook() {
   const t0 = dateStr(now);
-  const st = S.student, min = lessonMin(st.stage), done = doneOf(st);
+  const st = S.student, min = lessonMin(st.stage, st), done = doneOf(st);
   const plan = lessonPlan(st, S.bookings.filter(b => b.status === "confirmed" && !b.result && (b.stage ?? st.stage) === st.stage));
   const noOf = b => { const it = plan.items.find(x => x.bookings.some(y => y.id === b.id)); if (!it) return ""; const k = it.units > 1 ? it.bookings.slice().sort((x, y) => x.period - y.period).findIndex(y => y.id === b.id) : 0, n = it.no + Math.max(0, k); return `${n}時限目${n > min ? "（延長）" : ""}`; };
   const up = S.bookings.filter(b => b.status === "confirmed" && !b.result && b.date >= t0).sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);

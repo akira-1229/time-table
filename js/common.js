@@ -31,7 +31,8 @@ export const slotKey = (day, p) => `${day}-${p}`;                    // 月ご�
 // 実施済み＝priorDone（このシステムを使う前の分。管理画面で入力）＋ doneCount（実施チェックの分）
 // まだ実施チェックの済んでいない予約を日時の順に並べて、何時限目になるかを数える
 // 危険予測は2時限で1つと数える。単独高速は2時限として数える
-export const lessonMin = stage => ((CFG.lessons || {})[stage] || {}).min || 0;
+// 最低教習時限。第1段階は教習生ごとに変えられる（students/{t}.minLessons1。空なら config の値）
+export const lessonMin = (stage, st) => (stage === 1 && st && +st.minLessons1) || ((CFG.lessons || {})[stage] || {}).min || 0;
 export const kikenNoOf = stage => ((CFG.lessons || {})[stage] || {}).kikenNo || 0;
 export const hwNoOf = stage => ((CFG.lessons || {})[stage] || {}).hwNo || 0;
 // 高速教習は「単独高速（2時限）」か「高速教習（3時限）」。古いデータの highway:true だけの予約も高速として扱う
@@ -89,7 +90,7 @@ export function nextSpecial(st, pending) {
 // 記録は段階ごとに mikiwame1 / mikiwame2 ＝ { passed, date, bookingIds, kenteiDate, kenteiUndecided, gakkaDone }
 export const mikiwameOf = (st, stage = st.stage) => st[`mikiwame${stage}`] || null;
 export function isMikiwame(st, it) {
-  const min = lessonMin(st.stage), mk = mikiwameOf(st);
+  const min = lessonMin(st.stage, st), mk = mikiwameOf(st);
   return !!min && it.no + it.units - 1 >= min && !(mk && mk.passed);
 }
 // 今日が検定日か（段階を切り替えた後でも分かるよう、両方の段階を見る）
