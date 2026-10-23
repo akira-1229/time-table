@@ -76,7 +76,7 @@ function nextLesson() {
   const ps = it.bookings.map(b => b.period).sort((a, b) => a - b);
   const kind = it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.highway ? "高速教習" : "";
   const no = pi ? `${noRange(pi)}時限目` : "";
-  return { date: it.date, ps, time: `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`, kind, no, req: it.bookings.some(b => b.cancelRequested) };
+  return { ids: it.bookings.filter(b => !b.ackAt).map(b => b.id), date: it.date, ps, time: `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`, kind, no, req: it.bookings.some(b => b.cancelRequested) };
 }
 const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
 // アプリを開くたびに（ホーム画面から戻ってきた時も、10分以上たっていれば）次の教習を大きく出す
@@ -90,7 +90,7 @@ function showNextLesson() {
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
   <p style="font-size:13px;color:var(--muted)">教習開始の5分前には到着して、配車券の発行をお願い致します。都合が悪くなった時は、早めに学園にお電話ください。</p>
   <label class="ackchk"><input type="checkbox" id="nl_chk"> 確認しました</label>
-  <div class="list"><button class="btn primary full" id="nl_ok" data-act="nextOk" disabled>OK</button></div>`);
+  <div class="list"><button class="btn primary full" id="nl_ok" data-act="nextOk" data-ids="${n.ids.join(",")}" disabled>OK</button></div>`);
   // 「確認しました」にチェックを付けてOKを押すまで閉じない（外側を押しても閉じない）
   const bg = document.querySelector("#overlay .sheet-bg"); if (bg) bg.removeAttribute("data-act");
 }
@@ -209,6 +209,14 @@ function renderBook() {
   return h;
 }
 
+// 予約ごとの「確認しました」（bookings/{id}.ackAt）
+function ackBookings(ids) {
+  ids.forEach(id => {
+    const b = S.bookings.find(x => x.id === id); if (b) b.ackAt = { toMillis: () => Date.now() };
+    updateDoc(doc(db, "students", T, "bookings", id), { ackAt: serverTimestamp() }).catch(err => toast(friendlyError(err)));
+  });
+}
+
 /* ---------- 保存 ---------- */
 function scheduleSave(ym) {
   clearTimeout(S.saveTimers[ym]);
@@ -247,6 +255,8 @@ document.addEventListener("click", async e => {
   else if (a === "nextOk") {
     if (!document.getElementById("nl_chk")?.checked) return;
     closeSheet();
+    // この予約を確認済みにする（指導員の予約画面のその時限に「確認済」が出る）
+    ackBookings((t.dataset.ids || "").split(",").filter(Boolean));
     // 指導員の画面の「確認状況」も確認済みにする（未確認の時だけ書く）
     if (unacked()) {
       try { await updateDoc(doc(db, "students", T), { ackAt: serverTimestamp() }); S.student.ackAt = { toMillis: () => Date.now() }; render(); }
@@ -314,6 +324,9 @@ document.addEventListener("click", async e => {
     } catch (err) { toast(friendlyError(err)); t.disabled = false; }
   }
   else if (a === "ack") {
+    // これからの予約をまとめて確認済みにする
+    const t0 = dateStr(now);
+    ackBookings(S.bookings.filter(b => b.status === "confirmed" && !b.result && !b.ackAt && b.date >= t0).map(b => b.id));
     try { await updateDoc(doc(db, "students", T), { ackAt: serverTimestamp() }); S.student.ackAt = { toMillis: () => Date.now() }; render(); toast("確認しました"); }
     catch (err) { toast(friendlyError(err)); }
   }

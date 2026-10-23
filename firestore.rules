@@ -92,7 +92,11 @@ service cloud.firestore {
               && request.resource.data.instructorUid == request.auth.uid)
           || (resource.data.status == 'confirmed'
               && changedOnly(['cancelRequested', 'cancelRequestedAt'])
-              && request.resource.data.cancelRequested == true);
+              && request.resource.data.cancelRequested == true)
+          // 教習生の「確認しました」（予約ごと）。書けるのは書き込んだ時刻だけ
+          || (resource.data.status == 'confirmed'
+              && changedOnly(['ackAt'])
+              && request.resource.data.ackAt == request.time);
         allow delete: if isAdmin() || ownsStudent(t);
       }
     }

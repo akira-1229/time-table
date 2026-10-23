@@ -295,3 +295,5 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .ackchk input{width:24px;height:24px;margin:0;accent-color:var(--blue)}
 .ackchk:has(input:checked){border-color:var(--blue);background:var(--blue-soft)}
 #nl_ok:disabled{opacity:.45}
+/* 指導員：教習生が確認済みの予約 */
+.wc.bk.ackd{background:var(--green);border-color:var(--green)}

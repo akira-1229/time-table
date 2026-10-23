@@ -69,7 +69,17 @@ async function loadWeek() {
     const yms = [...new Set(days().map(ds => ds.slice(0, 7)))];
     await watchAvail(yms);
     const bq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("weekId", "==", wid()));
-    S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status !== "cancelled");
+    // この週の予約。教習生が「確認しました」を押すと（ackAt）、開いたままの画面にもすぐ「確認済」を出す
+    await new Promise((resolve, reject) => {
+      let first = true;
+      unwatch.push(onSnapshot(bq, r => {
+        const docs = r.docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() }));
+        if (first) { first = false; S.bookings = docs.filter(b => b.status !== "cancelled"); resolve(); return; }
+        const m = new Map(docs.map(d => [d.id, d]));
+        S.bookings.forEach(b => { const d = m.get(b.id); if (d) b.ackAt = d.ackAt || null; });
+        laterRender();
+      }, e => { if (first) { first = false; reject(e); } }));
+    });
     const w = await getDoc(doc(db, "weeks", `${S.uid}_${wid()}`));
     S.confirmed = w.exists();
     const cq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("cancelRequested", "==", true));
@@ -115,6 +125,8 @@ function watchCancelReqs() {
   }, e => { noteIndex(e); toast(friendlyError(e)); laterRender(); });
 }
 // 未確定の予約のうち、あとから教習生が◯を外した枠（締切前なら外せるため）
+// 教習生が、その予約を「確認しました」したか（実施・欠席のチェック前、キャンセル希望が出ていない時だけ出す）
+const acked = b => b.status === "confirmed" && !!b.ackAt && !b.result && !b.cancelRequested;
 const goneDraft = b => b.status === "draft" && !isFree(b.token, b.date, b.period);
 
 /* ---------- 何時限目か（進み具合） ---------- */
@@ -332,7 +344,7 @@ function render() {
       if (b) {
         const s = ST(b.token);
         const gone = goneDraft(b);
-        h += `<td><button class="wc bk ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : "通知済み"}</small></button></td>`;
+        h += `<td><button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(s ? s.name : "")}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
       } else if (pk && S.ptype && hasSpecial(pk)) {
         const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
         h += `<td><button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
@@ -699,7 +711,7 @@ document.addEventListener("click", async e => {
     else if (a === "booked") {
       const b = S.bookings.find(x => x.id === t.dataset.id); const s = ST(b.token);
       const it = itemOf(b);
-      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(s ? s.name : "")}</b>（第${s ? s.stage : "-"}段階）${it && s ? `・${noText(s, it)}` : ""}${typeName(b) ? `<br>${typeName(b)}${b.pairId ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}`;
+      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(s ? s.name : "")}</b>（第${s ? s.stage : "-"}段階）${it && s ? `・${noText(s, it)}` : ""}${typeName(b) ? `<br>${typeName(b)}${b.pairId ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}${b.status === "confirmed" ? `<br><span class="tag ${b.ackAt ? "ok" : "wait"}">${b.ackAt ? `教習生が確認済み${b.ackAt.toDate ? `（${md(dateStr(b.ackAt.toDate()))} ${String(b.ackAt.toDate().getHours()).padStart(2, "0")}:${String(b.ackAt.toDate().getMinutes()).padStart(2, "0")}）` : ""}` : "教習生はまだ確認していません"}</span>` : ""}`;
       if (b.result) {
         sheet(`${head}<br><span class="tag ${b.result === "done" ? "ok" : "wait"}">${b.result === "done" ? "実施済み" : "欠席"}</span></p>
         <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
