@@ -297,3 +297,13 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 #nl_ok:disabled{opacity:.45}
 /* 指導員：教習生が確認済みの予約 */
 .wc.bk.ackd{background:var(--green);border-color:var(--green)}
+
+/* 起動時の読み込み画面：暗い中でロゴが3Dで横に回る（厚さはロゴを少しずつずらして重ねて出す）。画面が描けたら boot.js が消す */
+#splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:radial-gradient(circle at 50% 46%,#072638 0%,#000d1a 52%,#00050b 100%);transition:opacity .35s ease}
+#splash.hide{opacity:0;pointer-events:none}
+.sp-stage{width:120px;height:120px;perspective:700px}
+.sp-logo{position:relative;width:100%;height:100%;transform-style:preserve-3d;animation:sp-spin 2.4s linear infinite}
+.sp-logo img{position:absolute;inset:0;width:100%;height:100%;transform:translateZ(var(--z));backface-visibility:visible;-webkit-user-drag:none;user-select:none}
+.sp-logo img.edge{filter:brightness(.5)}
+@keyframes sp-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}
+@media (prefers-reduced-motion:reduce){.sp-logo{animation-duration:8s}}

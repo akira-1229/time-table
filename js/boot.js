@@ -14,8 +14,19 @@
     errs.push(t && t !== window && (t.src || t.href) ? "読み込み失敗: " + (t.src || t.href) : (e.message || "エラー"));
   }, true);
   window.addEventListener("unhandledrejection", function (e) { errs.push(String(e.reason && e.reason.message || e.reason)); });
+  // 起動時の読み込み画面（回るロゴ）：画面が描けたら（#boot が消えたら）少し見せてから消す
+  var t0 = Date.now();
+  function hideSplash() {
+    var sp = document.getElementById("splash"); if (!sp) return;
+    sp.className = "hide"; setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 400);
+  }
+  (function poll() {
+    if (document.readyState !== "loading" && !document.getElementById("boot") && Date.now() - t0 >= 800) return hideSplash();
+    setTimeout(poll, 100);
+  })();
   setTimeout(function () {
     if (!document.getElementById("boot")) return;            // 画面が描けていれば何もしない
+    hideSplash();
     var ua = navigator.userAgent, inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|KAKAOTALK|YJApp|; wv\)/i.test(ua);
     var ext = location.href + (location.search ? "&" : "?") + "openExternalBrowser=1";
     var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
