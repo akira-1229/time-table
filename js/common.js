@@ -384,4 +384,6 @@ export function greeting(d = new Date()) {
   return h >= 3 && h < 12 ? "おはようございます！" : h >= 12 && h < 18 ? "こんにちは！" : "こんばんは！";
 }
 // お知らせの見出し（学園のマークを上に出す）
-export const noticeHead = (title = "お知らせ") => `<div class="notice-head"><img src="img/logo.png" alt="" class="notice-logo"><h3>${title}</h3></div>`;
+// 学園のマークを3Dで横に回す（起動時の読み込み画面と同じ作り。ロゴを0.5pxずつずらして9枚重ねて厚みを出す）
+export const spinLogo = (cls = "") => `<div class="sp-stage ${cls}" aria-hidden="true"><div class="sp-logo">${Array.from({ length: 9 }, (_, i) => `<img src="img/logo.png" alt="" class="${i === 0 || i === 8 ? "" : "edge"}" style="--z:${(i - 4) * 0.5}px">`).join("")}</div></div>`;
+export const noticeHead = (title = "お知らせ") => `<div class="notice-head">${spinLogo("notice-logo")}<h3>${title}</h3></div>`;
