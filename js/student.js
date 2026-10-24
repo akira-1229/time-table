@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead
+  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -44,9 +44,20 @@ async function load() {
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する
 let watching = false;
 function watch(bq) {
-  onSnapshot(bq, r => { S.bookings = r.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => { });
-  onSnapshot(doc(db, "students", T), d => { if (d.exists()) { S.student = d.data(); render(); } }, () => { });
+  onSnapshot(bq, r => { S.bookings = r.docs.map(d => ({ id: d.id, ...d.data() })); render(); checkNews(); }, () => { });
+  onSnapshot(doc(db, "students", T), d => { if (d.exists()) { S.student = d.data(); render(); checkNews(); } }, () => { });
 }
+// 新着（予約が決まった・変わった・取り消された、検定日など）があれば、開いたままでもお知らせを出す
+let lastSig = null, newsPending = false;
+const noticeSig = () => { const n = nextLesson(); return JSON.stringify([n && [n.date, n.ps], kenteiOn(S.student), S.bookings.filter(b => b.status === "cancelled").length, S.student.lastNotifiedAt && S.student.lastNotifiedAt.toMillis ? S.student.lastNotifiedAt.toMillis() : 0]); };
+function checkNews() {
+  if (!S.student) return;
+  const sig = noticeSig();
+  if (lastSig === null || sig === lastSig) { if (lastSig === null) lastSig = sig; return; }
+  lastSig = sig;
+  if (busySheet()) newsPending = true; else showNextLesson();
+}
+setInterval(() => { if (newsPending && !busySheet()) { newsPending = false; showNextLesson(); } }, 2000);
 function fail(msg) { app.innerHTML = `<div class="err">${esc(msg)}</div>`; }
 
 const nextYm = () => ymOf(MONTHS[1].y, MONTHS[1].m);
@@ -90,11 +101,11 @@ const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
 let nextShownAt = 0;
 function showNextLesson() {
   const n = nextLesson(), st = S.student;
-  nextShownAt = Date.now();
+  nextShownAt = Date.now(); lastSig = noticeSig();
   const head = `${noticeHead()}<p class="greet"><b>${esc(st.name)}さん</b>　${greeting()}</p>`;
   if (!n) {
     sheet(`${head}<p>次の教習の予定は、まだ決まっていません。予約が決まると通知でお知らせします。</p>
-    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`, { notice: true });
     return;
   }
   sheet(`${head}<p style="font-size:16px">次の教習の予定は、<b>${md(n.date)}の${n.parts.join("と")}</b>になります！</p>
@@ -102,7 +113,7 @@ function showNextLesson() {
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
   <p style="font-size:13px;color:var(--muted)">教習開始の5分前には到着して、配車券の発行をお願い致します。都合が悪くなった時は、早めに学園にお電話ください。</p>
   <label class="ackchk"><input type="checkbox" id="nl_chk"> 確認しました</label>
-  <div class="list"><button class="btn primary full" id="nl_ok" data-act="nextOk" data-ids="${n.ids.join(",")}" disabled>OK</button></div>`);
+  <div class="list"><button class="btn primary full" id="nl_ok" data-act="nextOk" data-ids="${n.ids.join(",")}" disabled>OK</button></div>`, { notice: true });
   // 「確認しました」にチェックを付けてOKを押すまで閉じない（外側を押しても閉じない）
   const bg = document.querySelector("#overlay .sheet-bg"); if (bg) bg.removeAttribute("data-act");
 }

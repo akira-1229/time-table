@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -60,25 +60,39 @@ onAuthStateChanged(auth, async user => {
   }
 });
 // アプリを開いた時のお知らせ：あいさつと、キャンセル希望・本日の検定・チェック待ちなどを箇条書き（0件でも出す）
-let noticeAt = 0;
+let noticeAt = 0, seenKeys = null, staffPending = false;
+// お知らせの項目（key は新着かどうかを見分けるため）
+function staffItems() {
+  const items = [];
+  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push([`cr:${b.id}`, `キャンセル希望：${esc(nm(s))}<small>（${label(b.date, b.period)}）</small>`]); });
+  S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}`, `本日、検定：${esc(nm(s))}`]));
+  const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
+  if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, `終わった教習の実施・欠席のチェック待ち：${unchecked.length}件`]);
+  S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
+    .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}`, `期限が近い：${esc(nm(s))}<small>（${esc(expiryText(e))}）</small>`]));
+  S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push([`ng:${s.token}:${pl.reason}`, `教習の順番のずれ：${esc(nm(s))}<small>（${esc(pl.reason)}）</small>`]));
+  const gones = S.bookings.filter(goneDraft);
+  if (gones.length) items.push([`gone:${gones.map(b => b.id).join(",")}`, `教習生が◯を外した未確定の予約：${gones.length}件`]);
+  return items;
+}
 function showStaffNotice() {
   if (!S.uid || !S.me) return;
   noticeAt = Date.now();
-  const items = [];
-  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push(`キャンセル希望：${esc(nm(s))}<small>（${label(b.date, b.period)}）</small>`); });
-  S.students.filter(s => kenteiOn(s)).forEach(s => items.push(`本日、検定：${esc(nm(s))}`));
-  const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
-  if (unchecked.length) items.push(`終わった教習の実施・欠席のチェック待ち：${unchecked.length}件`);
-  S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
-    .forEach(([s, e]) => items.push(`期限が近い：${esc(nm(s))}<small>（${esc(expiryText(e))}）</small>`));
-  S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push(`教習の順番のずれ：${esc(nm(s))}<small>（${esc(pl.reason)}）</small>`));
-  const gones = S.bookings.filter(goneDraft).length;
-  if (gones) items.push(`教習生が◯を外した未確定の予約：${gones}件`);
+  const items = staffItems(), prev = seenKeys;
+  seenKeys = new Set(items.map(x => x[0]));
+  const isNew = k => prev && !prev.has(k);
   sheet(`${noticeHead()}<p class="greet"><b>${esc(S.me.name)}さん</b>　お疲れ様です！</p>
     <p style="margin:0"><b>お知らせ ${items.length}件</b></p>
-    ${items.length ? `<ul class="notice-list">${items.map(x => `<li>${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted)">今日のお知らせはありません。</p>`}
-    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+    ${items.length ? `<ul class="notice-list">${items.map(([k, x]) => `<li class="${isNew(k) ? "new" : ""}">${isNew(k) ? '<b class="newtag">新着</b>' : ""}${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted)">今日のお知らせはありません。</p>`}
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`, { notice: true });
 }
+// 新着（キャンセル希望が届いた、◯が外された など）があれば、開いたままでもお知らせを出す
+function checkStaffNews() {
+  if (!S.uid || !S.me || !seenKeys || S.loading) return;
+  if (!staffItems().some(([k]) => !seenKeys.has(k))) return;
+  if (busySheet()) staffPending = true; else showStaffNotice();
+}
+setInterval(() => { if (staffPending && !busySheet()) { staffPending = false; checkStaffNews(); } }, 2000);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && S.uid && Date.now() - noticeAt > 10 * 60 * 1000 && !document.querySelector("#overlay .sheet")) showStaffNotice();
 });
@@ -136,7 +150,7 @@ function watchAvail(yms) {
     }, e => { if (first) { first = false; resolve(); } toast(friendlyError(e)); }));
   }))));
 }
-const laterRender = () => { if (S.loading) return; clearTimeout(renderTimer); renderTimer = setTimeout(render, 300); };
+const laterRender = () => { if (S.loading) return; clearTimeout(renderTimer); renderTimer = setTimeout(() => { render(); checkStaffNews(); }, 300); };
 // 教習生からのキャンセル希望も、届いたらすぐ表示する
 let unwatchCR = null;
 const stopCancelWatch = () => { if (unwatchCR) unwatchCR(); unwatchCR = null; };

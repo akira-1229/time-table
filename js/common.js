@@ -155,11 +155,14 @@ export function toast(t) {
   if (!el) { el = document.createElement("div"); el.className = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
   el.textContent = t; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.remove(), 3000);
 }
-export function sheet(html) {
+// opts.notice：お知らせ（画面の真ん中に出す。下のタブと重ならないように）
+export function sheet(html, opts = {}) {
   let ov = document.getElementById("overlay");
   if (!ov) { ov = document.createElement("div"); ov.id = "overlay"; document.body.appendChild(ov); }
-  ov.innerHTML = `<div class="sheet-bg" data-act="close"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  ov.innerHTML = `<div class="sheet-bg${opts.notice ? " center notice" : ""}" data-act="close"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
 }
+// いまお知らせ以外のシート（入力中の画面など）が開いているか
+export const busySheet = () => !!document.querySelector("#overlay .sheet-bg:not(.notice)");
 export function closeSheet() { const ov = document.getElementById("overlay"); if (ov) ov.innerHTML = ""; }
 export function onOverlayClose(e) {
   const t = e.target.closest('[data-act="close"]');
