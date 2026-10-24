@@ -231,7 +231,7 @@ body.pc[data-mode="admin"] #app>section.panel{max-width:480px;margin:60px auto}
 /* ---------- 画面の切り替えタブ（指導員の画面）：スマホは画面の下、PCは左端。ログイン中はいつも出す ---------- */
 .tabnav{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--nav);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 .tabnav .tn-head,.tabnav .tn-foot{display:none}
-.tn-tabs{display:grid;grid-template-columns:repeat(3,1fr);max-width:560px;margin:0 auto}
+.tn-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;max-width:560px;margin:0 auto}
 .tn-tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px 6px;min-height:58px;font-size:12px;font-weight:700;color:var(--muted)}
 .tn-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tn-tabs button[aria-selected="true"]{color:var(--blue)}
@@ -251,7 +251,7 @@ body.pc .tn-tabs button:hover{background:var(--bg)}
 body.pc .tn-tabs button[aria-selected="true"]{background:var(--blue-soft);color:var(--blue)}
 body.pc .tn-tabs svg{width:20px;height:20px}
 body.pc .tabnav .tn-foot{display:flex;flex-direction:column;align-items:flex-start;margin-top:auto}
-body.pc.shell #appWrap,body.pc.shell #mngWrap,body.pc.shell #setWrap{margin-left:220px}
+body.pc.shell #appWrap,body.pc.shell #mngWrap,body.pc.shell #setWrap,body.pc.shell #ntcWrap{margin-left:220px}
 /* 予約の管理（PC表示）：左にマス目、右に集計・お知らせ・一覧 */
 body.pc #appWrap{max-width:1280px;padding:20px 28px 40px}
 body.pc.shell #appWrap{margin-right:auto}
@@ -260,7 +260,7 @@ body.pc.shell #appWrap{margin-right:auto}
 body.pc .wc{height:52px;font-size:13px}
 body.pc .wk th.pl{width:64px}
 body.pc .wk{font-size:13px}
-body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
+body.pc #setWrap,body.pc #ntcWrap{max-width:760px;padding:20px 28px 40px}
 /* 設定 */
 .setpage .setgrp+.setgrp{border-top:1px solid var(--line);margin-top:14px;padding-top:4px}
 .setpage h3{margin-top:12px}
@@ -313,10 +313,19 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .notice-head .notice-logo{width:36px;height:36px;margin:2px auto 6px}
 .notice-head h3{margin:0}
 .greet{font-size:17px;margin:6px 0 8px}
-.notice-list{margin:6px 0 12px;padding-left:1.3em}
-.notice-list li{margin:4px 0}
-.notice-list li small{color:var(--muted)}
 /* お知らせは画面の真ん中に出す（下のタブと重ならない） */
 .sheet-bg.mid,body.pc .sheet-bg.mid{align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
 .sheet-bg.mid .sheet,body.pc .sheet-bg.mid .sheet{border-radius:18px;max-width:440px;height:auto;max-height:calc(100vh - 32px);padding-bottom:18px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
-.notice-list li.new b.newtag{display:inline-block;font-size:11px;color:#fff;background:var(--lv3);border-radius:6px;padding:0 5px;margin-right:4px;vertical-align:1px}
+/* お知らせの一覧：1項目1行（種類の札＋内容。長い時は「…」で切る） */
+.notice-list{list-style:none;margin:6px 0 12px;padding:0;text-align:left}
+.notice-list li{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.3;white-space:nowrap;min-width:0}
+.notice-list li:last-child{border-bottom:0}
+.notice-list .ntag{flex:none;font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--blue-soft);color:var(--blue)}
+.notice-list .ntag.warn{background:var(--orange-soft);color:var(--orange)}
+.notice-list .ntag.ok{background:var(--green-soft);color:var(--green)}
+.notice-list .ntext{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.notice-list .ntext small{color:var(--muted);margin-left:4px}
+.notice-list .newtag{flex:none;font-size:10px;font-weight:700;color:#fff;background:var(--lv3);border-radius:6px;padding:1px 5px}
+.hist-list li{flex-wrap:wrap;white-space:normal}
+.hist-list .nwhen{flex-basis:100%;font-size:11px;color:var(--muted)}
+.greet{text-align:center}

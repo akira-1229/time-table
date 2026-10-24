@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, unreadNotices, markNoticesSeen, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -52,6 +52,7 @@ onAuthStateChanged(auth, async user => {
     showStaffNotice();
     if (location.hash === "#manage") showView("manage");
     else if (location.hash === "#settings") showView("settings");
+    else if (location.hash === "#notice") showView("notice");
   } catch (e) {
     // ログインはできているので、ログイン画面には戻さず、理由とやり直しのボタンを出す
     noteIndex(e);
@@ -61,18 +62,19 @@ onAuthStateChanged(auth, async user => {
 });
 // アプリを開いた時のお知らせ：あいさつと、キャンセル希望・本日の検定・チェック待ちなどを箇条書き（0件でも出す）
 let noticeAt = 0, seenKeys = null, staffPending = false;
-// お知らせの項目（key は新着かどうかを見分けるため）
+// お知らせの項目（key は新着かどうかを見分けるため）。1項目1行に収まるよう短く書く
+const nsName = s => esc(nm(s));
 function staffItems() {
   const items = [];
-  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push([`cr:${b.id}`, `キャンセル希望：${esc(nm(s))}<small>（${label(b.date, b.period)}）</small>`]); });
-  S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}`, `本日、検定：${esc(nm(s))}`]));
+  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push([`cr:${b.id}`, noticeRow("キャンセル希望", `${nsName(s)}<small>${mdS(b.date)}${b.period}限</small>`, "warn")]); });
+  S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}:${dateStr(today())}`, noticeRow("本日検定", nsName(s), "ok")]));
   const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
-  if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, `終わった教習の実施・欠席のチェック待ち：${unchecked.length}件`]);
+  if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
   S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
-    .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}`, `期限が近い：${esc(nm(s))}<small>（${esc(expiryText(e))}）</small>`]));
-  S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push([`ng:${s.token}:${pl.reason}`, `教習の順番のずれ：${esc(nm(s))}<small>（${esc(pl.reason)}）</small>`]));
+    .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}:${e.date}`, noticeRow("期限", `${nsName(s)}<small>${e.label} ${mdS(e.date)}（${e.days < 0 ? `${-e.days}日過ぎ` : e.days === 0 ? "今日" : `あと${e.days}日`}）</small>`, "warn")]));
+  S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push([`ng:${s.token}:${pl.reason}`, noticeRow("順番のずれ", `${nsName(s)}<small>${esc(pl.reason)}</small>`, "warn")]));
   const gones = S.bookings.filter(goneDraft);
-  if (gones.length) items.push([`gone:${gones.map(b => b.id).join(",")}`, `教習生が◯を外した未確定の予約：${gones.length}件`]);
+  if (gones.length) items.push([`gone:${gones.map(b => b.id).join(",")}`, noticeRow("◯の取り消し", `未確定の予約から◯が外されました ${gones.length}件`, "warn")]);
   return items;
 }
 function showStaffNotice() {
@@ -81,9 +83,11 @@ function showStaffNotice() {
   const items = staffItems(), prev = seenKeys;
   seenKeys = new Set(items.map(x => x[0]));
   const isNew = k => prev && !prev.has(k);
+  saveNotices(`staff_${S.uid}`, items.map(([key, html]) => ({ key, html })));
+  renderNav();
   sheet(`${noticeHead()}<p class="greet"><b>${esc(S.me.name)}さん</b>　お疲れ様です！</p>
-    <p style="margin:0"><b>お知らせ ${items.length}件</b></p>
-    ${items.length ? `<ul class="notice-list">${items.map(([k, x]) => `<li class="${isNew(k) ? "new" : ""}">${isNew(k) ? '<b class="newtag">新着</b>' : ""}${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted)">今日のお知らせはありません。</p>`}
+    <p style="margin:0;text-align:center"><b>お知らせ ${items.length}件</b></p>
+    ${items.length ? `<ul class="notice-list">${items.map(([k, x]) => `<li>${isNew(k) ? '<b class="newtag">新着</b>' : ""}${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted);text-align:center">今日のお知らせはありません。</p>`}
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`, { notice: true });
 }
 // 新着（キャンセル希望が届いた、◯が外された など）があれば、開いたままでもお知らせを出す
@@ -703,6 +707,8 @@ function showView(v, quiet) {
   document.getElementById("appWrap").hidden = v !== "assign";
   document.getElementById("mngWrap").hidden = v !== "manage";
   document.getElementById("setWrap").hidden = v !== "settings";
+  document.getElementById("ntcWrap").hidden = v !== "notice";
+  if (v === "notice") renderNoticeTab();
   applyView();
   if (v === "manage") document.dispatchEvent(new Event("mng:open"));
   if (v === "settings") renderSettings();
@@ -716,16 +722,26 @@ function showView(v, quiet) {
 const ICON = {
   manage: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.6c2.9-.2 5 1.4 5.5 4.4"/></svg>',
   assign: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h3M13.5 13.5h3M7.5 17h3"/></svg>',
+  notice: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/></svg>',
   settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>'
 };
-const NAV = [["manage", "教習生の管理"], ["assign", "予約の管理"], ["settings", "設定"]];
+const NAV = [["manage", "教習生の管理"], ["assign", "予約の管理"], ["notice", "お知らせ"], ["settings", "設定"]];
 function renderNav() {
   const nav = document.getElementById("tabnav"), on = !!(S.uid && S.me);
   document.body.classList.toggle("shell", on); nav.hidden = !on;
   if (!on) { nav.innerHTML = ""; return; }
   nav.innerHTML = `<div class="tn-head"><b>${esc(CFG.schoolName)}</b><small>${esc(S.me.name)} 指導員</small></div>
-    <div class="tn-tabs" role="tablist">${NAV.map(([v, t]) => `<button role="tab" aria-selected="${S.view === v}" data-act="view" data-v="${v}">${ICON[v]}<span>${t}</span></button>`).join("")}</div>
+    <div class="tn-tabs" role="tablist">${NAV.map(([v, t]) => `<button role="tab" aria-selected="${S.view === v}" data-act="view" data-v="${v}">${ICON[v]}<span>${t}${v === "notice" && unreadNotices(`staff_${S.uid}`) ? `<span class="dot">${unreadNotices(`staff_${S.uid}`)}</span>` : ""}</span></button>`).join("")}</div>
     <div class="tn-foot"><a class="linkbtn" href="guide-instructor.html">使い方</a><button class="linkbtn" data-act="logout">ログアウト</button></div>`;
+}
+
+/* ---------- お知らせ（これまでに入った新着情報。新しい順） ---------- */
+function renderNoticeTab() {
+  if (!S.me) return;
+  markNoticesSeen(`staff_${S.uid}`);
+  document.getElementById("ntc").innerHTML = `<div class="topbar"><div><h1>お知らせ</h1><small>${esc(S.me.name)} 指導員</small></div></div>
+  <section class="panel"><div class="body"><button class="btn full" data-act="showNotice" style="margin-bottom:10px">いまのお知らせを表示する</button>${noticeHistoryHtml(`staff_${S.uid}`)}</div></section>`;
+  renderNav();
 }
 
 /* ---------- 設定 ---------- */
@@ -802,6 +818,7 @@ document.addEventListener("click", async e => {
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="booked" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.status === "draft" ? "未確定" : acked(x) ? "確認済" : "通知済み"}</div></div></button>`; }).join("")}</div>
         <div class="list" style="margin-top:10px">${hw3JoinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
     }
+    else if (a === "showNotice") showStaffNotice();
     else if (a === "hw3Join") { slotSheet(t.dataset.d, +t.dataset.p, "hw3", +t.dataset.p); }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
     else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }

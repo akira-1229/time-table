@@ -390,3 +390,28 @@ export function greeting(d = new Date()) {
 // 学園のマークを3Dで横に回す（起動時の読み込み画面と同じ作り。ロゴを0.5pxずつずらして9枚重ねて厚みを出す）
 export const spinLogo = (cls = "") => `<div class="sp-stage ${cls}" aria-hidden="true"><div class="sp-logo">${Array.from({ length: 9 }, (_, i) => `<img src="img/logo.png" alt="" class="${i === 0 || i === 8 ? "" : "edge"}" style="--z:${(i - 4) * 0.5}px">`).join("")}</div></div>`;
 export const noticeHead = (title = "お知らせ") => `<div class="notice-head">${spinLogo("notice-logo")}<h3>${title}</h3></div>`;
+
+/* ---------- お知らせの履歴（「お知らせ」タブ） ---------- */
+// 新しく出たお知らせの項目を、その端末に保存する（同じ項目は1回だけ。新しい順に最大200件）。0件の時は何も保存しない
+export const mdS = ds => { const d = parseDate(ds); return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`; };   // 例 10/29(木)
+const histKey = scope => `timetable_notices_${scope}`;
+export function noticeHistory(scope) { try { return JSON.parse(localStorage.getItem(histKey(scope)) || "[]"); } catch (e) { return []; } }
+export function saveNotices(scope, items) {
+  if (!items.length) return;
+  const list = noticeHistory(scope), have = new Set(list.map(x => x.key)), now = Date.now();
+  const add = items.filter(x => !have.has(x.key)).map(x => ({ key: x.key, html: x.html, at: now }));
+  if (!add.length) return;
+  try { localStorage.setItem(histKey(scope), JSON.stringify([...add, ...list].slice(0, 200))); } catch (e) { }
+}
+// まだ見ていないお知らせの数（「お知らせ」タブの印）
+export const unreadNotices = scope => { let seen = 0; try { seen = +localStorage.getItem(histKey(scope) + "_seen") || 0; } catch (e) { } return noticeHistory(scope).filter(x => x.at > seen).length; };
+export const markNoticesSeen = scope => { try { localStorage.setItem(histKey(scope) + "_seen", String(Date.now())); } catch (e) { } };
+export function noticeHistoryHtml(scope) {
+  const list = noticeHistory(scope);
+  if (!list.length) return `<p style="color:var(--muted)">まだお知らせはありません。新しいお知らせが届くと、ここに新しい順に残ります。</p>`;
+  const dt = ms => { const d = new Date(ms), p2 = n => String(n).padStart(2, "0"); return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]}) ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  return `<ul class="notice-list hist-list">${list.map(x => `<li><span class="nwhen">${dt(x.at)}</span>${x.html}</li>`).join("")}</ul>
+    <p class="setnote">この端末に、新しい順に最大200件残します。</p>`;
+}
+// お知らせの1行（種類の札＋内容）
+export const noticeRow = (tag, text, cls = "") => `<span class="ntag ${cls}">${tag}</span><span class="ntext">${text}</span>`;

@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet
+  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, unreadNotices, markNoticesSeen, noticeHistoryHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -108,6 +108,8 @@ function showNextLesson() {
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`, { notice: true });
     return;
   }
+  saveNotices(NSCOPE(), [{ key: `nx:${n.date}:${n.ps.join(",")}`, html: noticeRow(n.date === dateStr(today()) ? "今日の教習" : "次の教習", `${mdS(n.date)} ${n.parts.join("と")}${n.kind ? `<small>${esc(n.kind)}</small>` : ""}`) }]);
+  if (S.tab !== "ntc") renderNav();
   sheet(`${head}<p style="font-size:16px">次の教習の予定は、<b>${md(n.date)}の${n.parts.join("と")}</b>になります！</p>
   <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
@@ -125,12 +127,13 @@ document.addEventListener("visibilitychange", () => {
 const TABS = [
   ["cal", "空き時間の登録", '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8.5 15l2.3 2.3 4.7-4.6"/></svg>'],
   ["book", "教習の進み具合", '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>'],
+  ["ntc", "お知らせ", '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/></svg>'],
   ["set", "設定", '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>']
 ];
 function renderNav() {
   const nav = document.getElementById("tabnav");
   document.body.classList.add("shell"); nav.hidden = false;
-  nav.innerHTML = `<div class="tn-tabs" role="tablist">${TABS.map(([v, t, ic]) => `<button role="tab" aria-selected="${S.tab === v}" data-act="tab" data-v="${v}">${ic}<span>${t}${v === "book" && unacked() ? '<span class="dot">!</span>' : ""}</span></button>`).join("")}</div>`;
+  nav.innerHTML = `<div class="tn-tabs" role="tablist">${TABS.map(([v, t, ic]) => `<button role="tab" aria-selected="${S.tab === v}" data-act="tab" data-v="${v}">${ic}<span>${t}${v === "book" && unacked() ? '<span class="dot">!</span>' : ""}${v === "ntc" && unreadNotices(NSCOPE()) ? `<span class="dot">${unreadNotices(NSCOPE())}</span>` : ""}</span></button>`).join("")}</div>`;
 }
 function render() {
   const st = S.student, title = TABS.find(x => x[0] === S.tab)[1];
@@ -139,9 +142,15 @@ function render() {
   if (nx) h += `<button class="nextbar" data-act="next"><span>${nx.date === dateStr(today()) ? "今日の教習" : "次の教習"}</span><b>${nextText(nx)}</b><small>${nx.time}</small></button>`;
   if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
   h += `<section class="panel"><div class="body${S.tab === "set" ? " setpage" : ""}">`;
-  h += S.tab === "cal" ? renderCal() : S.tab === "book" ? renderBook() : renderSet();
+  h += S.tab === "cal" ? renderCal() : S.tab === "book" ? renderBook() : S.tab === "ntc" ? renderNtc() : renderSet();
   app.innerHTML = h + `</div></section>`;
   renderNav();
+}
+// お知らせ：これまでに入った新着情報（新しい順。この端末に保存）
+const NSCOPE = () => `student_${T}`;
+function renderNtc() {
+  markNoticesSeen(NSCOPE());
+  return `<button class="btn full" data-act="next" style="margin-bottom:10px">いまのお知らせを表示する</button>${noticeHistoryHtml(NSCOPE())}`;
 }
 // 設定：見た目（明るさ・文字の大きさ）、通知、ホーム画面に追加、困った時
 function renderSet() {
