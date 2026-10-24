@@ -403,12 +403,9 @@ export function saveNotices(scope, items) {
   if (!add.length) return;
   try { localStorage.setItem(histKey(scope), JSON.stringify([...add, ...list].slice(0, 200))); } catch (e) { }
 }
-// まだ見ていないお知らせの数（「お知らせ」タブの印）
-export const unreadNotices = scope => { let seen = 0; try { seen = +localStorage.getItem(histKey(scope) + "_seen") || 0; } catch (e) { } return noticeHistory(scope).filter(x => x.at > seen).length; };
-export const markNoticesSeen = scope => { try { localStorage.setItem(histKey(scope) + "_seen", String(Date.now())); } catch (e) { } };
 export function noticeHistoryHtml(scope) {
   const list = noticeHistory(scope);
-  if (!list.length) return `<p style="color:var(--muted)">まだお知らせはありません。新しいお知らせが届くと、ここに新しい順に残ります。</p>`;
+  if (!list.length) return `<p style="color:var(--muted)">まだお知らせはありません。アプリを開いた時に出たお知らせが、ここに新しい順に残ります。</p>`;
   const dt = ms => { const d = new Date(ms), p2 = n => String(n).padStart(2, "0"); return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]}) ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
   return `<ul class="notice-list hist-list">${list.map(x => `<li><span class="nwhen">${dt(x.at)}</span>${x.html}</li>`).join("")}</ul>
     <p class="setnote">この端末に、新しい順に最大200件残します。</p>`;

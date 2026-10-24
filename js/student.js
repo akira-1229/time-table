@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, unreadNotices, markNoticesSeen, noticeHistoryHtml
+  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -109,7 +109,7 @@ function showNextLesson() {
     return;
   }
   saveNotices(NSCOPE(), [{ key: `nx:${n.date}:${n.ps.join(",")}`, html: noticeRow(n.date === dateStr(today()) ? "今日の教習" : "次の教習", `${mdS(n.date)} ${n.parts.join("と")}${n.kind ? `<small>${esc(n.kind)}</small>` : ""}`) }]);
-  if (S.tab !== "ntc") renderNav();
+  if (S.tab === "ntc") render();
   sheet(`${head}<p style="font-size:16px">次の教習の予定は、<b>${md(n.date)}の${n.parts.join("と")}</b>になります！</p>
   <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
@@ -133,7 +133,7 @@ const TABS = [
 function renderNav() {
   const nav = document.getElementById("tabnav");
   document.body.classList.add("shell"); nav.hidden = false;
-  nav.innerHTML = `<div class="tn-tabs" role="tablist">${TABS.map(([v, t, ic]) => `<button role="tab" aria-selected="${S.tab === v}" data-act="tab" data-v="${v}">${ic}<span>${t}${v === "book" && unacked() ? '<span class="dot">!</span>' : ""}${v === "ntc" && unreadNotices(NSCOPE()) ? `<span class="dot">${unreadNotices(NSCOPE())}</span>` : ""}</span></button>`).join("")}</div>`;
+  nav.innerHTML = `<div class="tn-tabs" role="tablist">${TABS.map(([v, t, ic]) => `<button role="tab" aria-selected="${S.tab === v}" data-act="tab" data-v="${v}">${ic}<span>${t}${v === "book" && unacked() ? '<span class="dot">!</span>' : ""}</span></button>`).join("")}</div>`;
 }
 function render() {
   const st = S.student, title = TABS.find(x => x[0] === S.tab)[1];
@@ -149,8 +149,7 @@ function render() {
 // お知らせ：これまでに入った新着情報（新しい順。この端末に保存）
 const NSCOPE = () => `student_${T}`;
 function renderNtc() {
-  markNoticesSeen(NSCOPE());
-  return `<button class="btn full" data-act="next" style="margin-bottom:10px">いまのお知らせを表示する</button>${noticeHistoryHtml(NSCOPE())}`;
+  return noticeHistoryHtml(NSCOPE());
 }
 // 設定：見た目（明るさ・文字の大きさ）、通知、ホーム画面に追加、困った時
 function renderSet() {

@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, unreadNotices, markNoticesSeen, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -84,7 +84,7 @@ function showStaffNotice() {
   seenKeys = new Set(items.map(x => x[0]));
   const isNew = k => prev && !prev.has(k);
   saveNotices(`staff_${S.uid}`, items.map(([key, html]) => ({ key, html })));
-  renderNav();
+  if (S.view === "notice") renderNoticeTab();
   sheet(`${noticeHead()}<p class="greet"><b>${esc(S.me.name)}さん</b>　お疲れ様です！</p>
     <p style="margin:0;text-align:center"><b>お知らせ ${items.length}件</b></p>
     ${items.length ? `<ul class="notice-list">${items.map(([k, x]) => `<li>${isNew(k) ? '<b class="newtag">新着</b>' : ""}${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted);text-align:center">今日のお知らせはありません。</p>`}
@@ -731,17 +731,15 @@ function renderNav() {
   document.body.classList.toggle("shell", on); nav.hidden = !on;
   if (!on) { nav.innerHTML = ""; return; }
   nav.innerHTML = `<div class="tn-head"><b>${esc(CFG.schoolName)}</b><small>${esc(S.me.name)} 指導員</small></div>
-    <div class="tn-tabs" role="tablist">${NAV.map(([v, t]) => `<button role="tab" aria-selected="${S.view === v}" data-act="view" data-v="${v}">${ICON[v]}<span>${t}${v === "notice" && unreadNotices(`staff_${S.uid}`) ? `<span class="dot">${unreadNotices(`staff_${S.uid}`)}</span>` : ""}</span></button>`).join("")}</div>
+    <div class="tn-tabs" role="tablist">${NAV.map(([v, t]) => `<button role="tab" aria-selected="${S.view === v}" data-act="view" data-v="${v}">${ICON[v]}<span>${t}</span></button>`).join("")}</div>
     <div class="tn-foot"><a class="linkbtn" href="guide-instructor.html">使い方</a><button class="linkbtn" data-act="logout">ログアウト</button></div>`;
 }
 
 /* ---------- お知らせ（これまでに入った新着情報。新しい順） ---------- */
 function renderNoticeTab() {
   if (!S.me) return;
-  markNoticesSeen(`staff_${S.uid}`);
   document.getElementById("ntc").innerHTML = `<div class="topbar"><div><h1>お知らせ</h1><small>${esc(S.me.name)} 指導員</small></div></div>
-  <section class="panel"><div class="body"><button class="btn full" data-act="showNotice" style="margin-bottom:10px">いまのお知らせを表示する</button>${noticeHistoryHtml(`staff_${S.uid}`)}</div></section>`;
-  renderNav();
+  <section class="panel"><div class="body">${noticeHistoryHtml(`staff_${S.uid}`)}</div></section>`;
 }
 
 /* ---------- 設定 ---------- */
@@ -818,7 +816,6 @@ document.addEventListener("click", async e => {
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="booked" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.status === "draft" ? "未確定" : acked(x) ? "確認済" : "通知済み"}</div></div></button>`; }).join("")}</div>
         <div class="list" style="margin-top:10px">${hw3JoinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
     }
-    else if (a === "showNotice") showStaffNotice();
     else if (a === "hw3Join") { slotSheet(t.dataset.d, +t.dataset.p, "hw3", +t.dataset.p); }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
     else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }
