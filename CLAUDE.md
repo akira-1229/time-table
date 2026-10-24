@@ -48,7 +48,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   css/app.css              色はCSS変数。文字「大きめ」は .wrap と .sheet だけ zoom（body ごと zoom すると iPhone で下の固定タブが途中で止まる）。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
-  js/boot.js               起動時の読み込み画面（各画面の body 直下の #splash。暗い背景で img/logo.png を7枚 translateZ でずらして重ね、厚み約2pxのロゴを3Dで横回転。#boot が消えたら最低0.8秒見せてフェードで消す）。「読み込み中」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
+  js/boot.js               起動時の読み込み画面（各画面の body 直下の #splash。暗い背景で img/logo.png を9枚 translateZ で0.5pxずつずらして重ね、厚み約4px（3pt。依頼者指定）のロゴを3Dで横回転。#boot が消えたら最低0.8秒見せてフェードで消す）。「読み込み中」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
   js/demo-db.js            デモ用の仮DB（Firestore/Auth風のAPI。localStorageに保存。見本データ入り）
   js/common.js             初期化（admin.html だけ Firebase のアプリ名を "admin" にして、ログインの保存場所を指導員の画面と分ける。同じブラウザで別アカウントを使うと、役割違いの signOut で互いにログアウトさせていたため）、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
