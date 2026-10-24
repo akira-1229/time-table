@@ -307,3 +307,12 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .sp-logo img.edge{filter:brightness(.5)}
 @keyframes sp-spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}
 @media (prefers-reduced-motion:reduce){.sp-logo{animation-duration:8s}}
+
+/* アプリを開いた時のお知らせ */
+.notice-head{text-align:center;margin:-4px 0 6px}
+.notice-head .notice-logo{width:64px;height:64px;display:block;margin:0 auto 4px;object-fit:contain}
+.notice-head h3{margin:0}
+.greet{font-size:17px;margin:6px 0 8px}
+.notice-list{margin:6px 0 12px;padding-left:1.3em}
+.notice-list li{margin:4px 0}
+.notice-list li small{color:var(--muted)}

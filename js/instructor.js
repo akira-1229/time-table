@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -47,6 +47,7 @@ onAuthStateChanged(auth, async user => {
     listenForeground(() => loadWeek());
     watchCancelReqs();
     await loadWeek();
+    showStaffNotice();
     if (location.hash === "#manage") showView("manage");
     else if (location.hash === "#settings") showView("settings");
   } catch (e) {
@@ -55,6 +56,29 @@ onAuthStateChanged(auth, async user => {
     root.innerHTML = `<section class="panel"><div class="body"><div class="banner warn">${esc(friendlyError(e))}</div>${indexBanner()}
       <div class="list"><button class="btn primary full" data-act="retry">もう一度読み込む</button><button class="btn full" data-act="logout">ログアウト</button></div></div></section>`;
   }
+});
+// アプリを開いた時のお知らせ：あいさつと、キャンセル希望・本日の検定・チェック待ちなどを箇条書き（0件でも出す）
+let noticeAt = 0;
+function showStaffNotice() {
+  if (!S.uid || !S.me) return;
+  noticeAt = Date.now();
+  const items = [];
+  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push(`キャンセル希望：${esc(s ? s.name : "")}さん<small>（${label(b.date, b.period)}）</small>`); });
+  S.students.filter(s => kenteiOn(s)).forEach(s => items.push(`本日、検定：${esc(s.name)}さん`));
+  const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
+  if (unchecked.length) items.push(`終わった教習の実施・欠席のチェック待ち：${unchecked.length}件`);
+  S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
+    .forEach(([s, e]) => items.push(`期限が近い：${esc(s.name)}さん<small>（${esc(expiryText(e))}）</small>`));
+  S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push(`教習の順番のずれ：${esc(s.name)}さん<small>（${esc(pl.reason)}）</small>`));
+  const gones = S.bookings.filter(goneDraft).length;
+  if (gones) items.push(`教習生が◯を外した未確定の予約：${gones}件`);
+  sheet(`${noticeHead()}<p class="greet"><b>${esc(S.me.name)}さん</b>　お疲れ様です！</p>
+    <p style="margin:0"><b>お知らせ ${items.length}件</b></p>
+    ${items.length ? `<ul class="notice-list">${items.map(x => `<li>${x}</li>`).join("")}</ul>` : `<p style="color:var(--muted)">今日のお知らせはありません。</p>`}
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && S.uid && Date.now() - noticeAt > 10 * 60 * 1000 && !document.querySelector("#overlay .sheet")) showStaffNotice();
 });
 // 索引が無い時は「索引を作る」リンクを画面に出す（管理者がPCで押すと作られる。数分かかる）
 function noteIndex(e) { const u = indexLinkOf(e); if (u) S.indexLinks.add(u); }

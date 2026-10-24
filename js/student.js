@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, trackAccess
+  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -66,27 +66,39 @@ function unacked() {
   return n && (!a || n.toMillis() > a.toMillis());
 }
 
-// 次の教習（確定済みで、まだ終わっていない一番早い予約）。2時限連続の教習は1つにまとめる
+// 次の教習（確定済みで、まだ終わっていない一番早い予約の日）。同じ日の予約はまとめて出す（2・3時限連続の教習は1つにまとめる）
+const kindOf = it => it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.lessonType === "hw3" || it.highway ? "高速教習" : "";
 function nextLesson() {
   const st = S.student, t = new Date();
   const list = S.bookings.filter(b => b.status === "confirmed" && !b.result && bookingEnd(b) > t);
-  const it = lessonItems(list)[0]; if (!it) return null;
+  const first = lessonItems(list)[0]; if (!first) return null;
+  const day = lessonItems(list.filter(b => b.date === first.date));
   const plan = lessonPlan(st, S.bookings.filter(b => b.status === "confirmed" && !b.result && (b.stage ?? st.stage) === st.stage));
-  const pi = plan.items.find(x => x.bookings.some(y => y.id === it.bookings[0].id));
-  const ps = it.bookings.map(b => b.period).sort((a, b) => a - b);
-  const kind = it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.highway ? "高速教習" : "";
-  const no = pi ? `${noRange(pi)}時限目` : "";
-  return { ids: it.bookings.filter(b => !b.ackAt).map(b => b.id), date: it.date, ps, time: `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`, kind, no, req: it.bookings.some(b => b.cancelRequested) };
+  const psOf = it => it.bookings.map(b => b.period).sort((a, b) => a - b);
+  // 例：「2時限目」「4・5時限目（2時限連続）」「2時限目と6時限目」
+  const parts = day.map(it => { const ps = psOf(it); return `${ps.join("・")}時限目${ps.length > 1 ? `（${ps.length}時限連続）` : ""}`; });
+  const nos = day.map(it => plan.items.find(x => x.bookings.some(y => y.id === it.bookings[0].id))).filter(Boolean).map(pi => `${noRange(pi)}時限目`);
+  const all = day.flatMap(it => it.bookings);
+  return {
+    ids: all.filter(b => !b.ackAt).map(b => b.id), date: first.date, ps: all.map(b => b.period).sort((a, b) => a - b), parts,
+    time: day.map(it => { const ps = psOf(it); return `${P[ps[0]][0]}〜${P[ps.at(-1)][1]}`; }).join("、"),
+    kind: [...new Set(day.map(kindOf).filter(Boolean))].join("・"), no: nos.join("・"), req: all.some(b => b.cancelRequested)
+  };
 }
 const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
-// アプリを開くたびに（ホーム画面から戻ってきた時も、10分以上たっていれば）次の教習を大きく出す
+// アプリを開くたびに（ホーム画面から戻ってきた時も、10分以上たっていれば）お知らせ（あいさつと次の教習）を出す
 let nextShownAt = 0;
 function showNextLesson() {
-  const n = nextLesson(); if (!n) return;
+  const n = nextLesson(), st = S.student;
   nextShownAt = Date.now();
-  const isToday = n.date === dateStr(today());
-  sheet(`<h3>${isToday ? "今日の教習" : "次の教習"}</h3>
-  <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.no ? `・${n.no}` : ""}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
+  const head = `${noticeHead()}<p class="greet"><b>${esc(st.name)}さん</b>　${greeting()}</p>`;
+  if (!n) {
+    sheet(`${head}<p>次の教習の予定は、まだ決まっていません。予約が決まると通知でお知らせします。</p>
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+    return;
+  }
+  sheet(`${head}<p style="font-size:16px">次の教習の予定は、<b>${md(n.date)}の${n.parts.join("と")}</b>になります！</p>
+  <div class="nextl"><div class="d">${md(n.date)}</div><div class="p">${n.ps.join("・")}限</div><div class="s">${n.time}${n.kind ? `・${esc(n.kind)}` : ""}</div></div>
   ${n.req ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div>' : ""}
   <p style="font-size:13px;color:var(--muted)">教習開始の5分前には到着して、配車券の発行をお願い致します。都合が悪くなった時は、早めに学園にお電話ください。</p>
   <label class="ackchk"><input type="checkbox" id="nl_chk"> 確認しました</label>

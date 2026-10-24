@@ -266,7 +266,9 @@ export function firstVisitInstall(kind) {
   const key = `timetable_install_shown_${kind}`;
   try { if (localStorage.getItem(key)) return; } catch (e) { return; }
   // ほかの案内（次の教習など）が出ている時は、次に開いた時に回す
-  setTimeout(() => { if (document.querySelector("#overlay .sheet")) return; try { localStorage.setItem(key, "1"); } catch (e) { } installSheet(kind); }, 1200);
+  // お知らせなど、ほかの案内が出ている間は待って、閉じたら出す
+  const tryShow = (n = 0) => { if (document.querySelector("#overlay .sheet")) { if (n < 300) setTimeout(() => tryShow(n + 1), 1000); return; } try { localStorage.setItem(key, "1"); } catch (e) { } installSheet(kind); };
+  setTimeout(tryShow, 1200);
 }
 if (typeof document !== "undefined") document.addEventListener("click", async e => {
   const t = e.target.closest("[data-act]"); if (!t) return;
@@ -374,3 +376,12 @@ export function trackAccess(kind, who, iu = "") {
   logAccess();
   if (!accessListening) { accessListening = true; document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") logAccess(); }); }
 }
+
+/* ---------- アプリを開いた時のお知らせ（教習生・指導員共通の見出し） ---------- */
+// あいさつ：3時〜12時「おはようございます！」、12時〜18時「こんにちは！」、18時〜翌3時「こんばんは！」
+export function greeting(d = new Date()) {
+  const h = d.getHours();
+  return h >= 3 && h < 12 ? "おはようございます！" : h >= 12 && h < 18 ? "こんにちは！" : "こんばんは！";
+}
+// お知らせの見出し（学園のマークを上に出す）
+export const noticeHead = (title = "お知らせ") => `<div class="notice-head"><img src="img/logo.png" alt="" class="notice-logo"><h3>${title}</h3></div>`;
