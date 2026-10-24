@@ -317,6 +317,6 @@ body.pc #setWrap{max-width:760px;padding:20px 28px 40px}
 .notice-list li{margin:4px 0}
 .notice-list li small{color:var(--muted)}
 /* お知らせは画面の真ん中に出す（下のタブと重ならない） */
-.sheet-bg.center,body.pc .sheet-bg.center{align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
-.sheet-bg.center .sheet,body.pc .sheet-bg.center .sheet{border-radius:18px;max-width:440px;height:auto;max-height:calc(100vh - 32px);padding-bottom:18px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.sheet-bg.mid,body.pc .sheet-bg.mid{align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.sheet-bg.mid .sheet,body.pc .sheet-bg.mid .sheet{border-radius:18px;max-width:440px;height:auto;max-height:calc(100vh - 32px);padding-bottom:18px;box-shadow:0 12px 40px rgba(0,0,0,.3)}
 .notice-list li.new b.newtag{display:inline-block;font-size:11px;color:#fff;background:var(--lv3);border-radius:6px;padding:0 5px;margin-right:4px;vertical-align:1px}
