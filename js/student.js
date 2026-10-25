@@ -175,11 +175,12 @@ function renderCal() {
   else if (open) h += `<div class="banner warn"><b>${m}月分の入力締切は${dlText(ym)}です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else if (S.mi === 1 && !filled) h += `<div class="banner warn"><b>${m}月分の入力締切（${dlText(ym)}）を過ぎています。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
-  h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   // 縦が時限、横が日付（日付が多いので横にスクロール。時限の列は左に固定）
   const start = S.mi === 0 ? now.getDate() : 1;
   const dl = []; for (let d = start; d <= daysIn(y, m); d++) dl.push(d);
   h += `<div class="calhint">縦が時限、横が日付です。横にスクロールすると月末まで見られます。</div>`;
+  // 月の切り替えは、表のすぐ上に出す（指導員画面の週の切り替えと同じ位置。依頼者指定）
+  h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
   h += `</tr></thead><tbody>`;
