@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 220 464" preserveAspectRatio="xMidYMax slice">
+<defs><linearGradient id="fuyuSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#071022"/><stop offset="1" stop-color="#1b2c4a"/></linearGradient></defs>
+          <rect width="220" height="464" fill="url(#fuyuSky)"/>
+          <path d="M0 404 Q70 386 140 398 T220 392 V464 H0Z" fill="#dfe8f4"/>
+          <path d="M0 420 Q80 408 150 418 T220 414 V464 H0Z" fill="#c9d6e8"/>
+          <!-- ツリー -->
+          <rect x="146" y="392" width="10" height="16" fill="#5b3a24"/>
+          <path d="M151 290 L126 336 h12 L118 366 h14 L112 396 h78 L170 366 h14 L164 336 h12Z" fill="#1d5b3c"/>
+          <path d="M151 290 L126 336 h12 L118 366 h14 L112 396 h12 L151 300Z" fill="#256e49"/>
+          <polygon points="151,276 154.5,285 164,285 156.5,291 159.5,300 151,294.5 142.5,300 145.5,291 138,285 147.5,285" fill="#ffd34d"/>
+          <g><circle cx="140" cy="340" r="3" fill="#e2463b"/><circle cx="160" cy="352" r="3" fill="#ffd34d"/><circle cx="132" cy="374" r="3" fill="#5fb4ff"/><circle cx="168" cy="380" r="3" fill="#e2463b"/><circle cx="150" cy="322" r="3" fill="#5fb4ff"/><circle cx="148" cy="364" r="3" fill="#f39adf"/></g>
+          <!-- プレゼント -->
+          <rect x="40" y="398" width="26" height="22" rx="2" fill="#c8333a"/><rect x="51" y="398" width="4" height="22" fill="#ffd34d"/><rect x="40" y="406" width="26" height="4" fill="#ffd34d"/>
+          <rect x="70" y="406" width="20" height="16" rx="2" fill="#2f6fb7"/><rect x="78" y="406" width="4" height="16" fill="#e9f0fa"/>
+</svg>

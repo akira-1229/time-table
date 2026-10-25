@@ -49,6 +49,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
   js/boot.js               起動時の読み込み画面（各画面の body 直下の #splash。暗い背景で img/logo.png を9枚 translateZ で0.5pxずつずらして重ね、厚み約4px（3pt。依頼者指定）のロゴを3Dで横回転。#boot が消えたら最低0.8秒見せてフェードで消す）。「読み込み中」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
+  js/season.js             読み込み画面の季節の背景（各画面の #splash の直後で読む classic script）。ロゴの後ろに img/season-*.svg の絵と canvas の動き：10〜11月 紅葉が散る＋お月見／12〜2月 雪＋クリスマス／3〜4月 桜が散る＋昼の富士山と湖（桜は左上だけ）／5〜6月 鯉のぼり＋新緑の山々／7〜9月 花火＋夕暮れの浜辺と入道雲（依頼者が見本で確認済み）。季節があるとロゴは上から40%の位置（絵はロゴにかからないように描いてある）。絵は縦長で下そろえ、横長の画面では真ん中に縦長で出し両わきはぼかした同じ絵。`?season=haru` などで季節を指定して確認できる。絵の元は見本ページ（https://claude.ai/artifact/UeYY9XE2BrZPJVHGqQxfow）を作った生成スクリプト
   js/demo-db.js            デモ用の仮DB（Firestore/Auth風のAPI。localStorageに保存。見本データ入り）
   js/common.js             初期化（admin.html だけ Firebase のアプリ名を "admin" にして、ログインの保存場所を指導員の画面と分ける。同じブラウザで別アカウントを使うと、役割違いの signOut で互いにログアウトさせていたため）、日付、トースト/シート、プッシュ登録、デモの帯、ホーム画面に追加の案内（初回だけ自動表示。Androidは beforeinstallprompt、iPhoneは手順を表示）
   js/student.js            教習生画面
