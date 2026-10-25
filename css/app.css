@@ -329,3 +329,7 @@ body.pc #setWrap,body.pc #ntcWrap{max-width:760px;padding:20px 28px 40px}
 .hist-list li{flex-wrap:wrap;white-space:normal}
 .hist-list .nwhen{flex-basis:100%;font-size:11px;color:var(--muted)}
 .greet{text-align:center}
+/* 教習生：日付の下の「その日を全部」チェック */
+.calt tr.dayall td{text-align:center;padding:2px 0 4px}
+.calt .daychk{width:20px;height:20px;margin:0;accent-color:var(--blue);cursor:pointer}
+.calt tr.dayall th.pl small{font-size:11px;color:var(--muted)}

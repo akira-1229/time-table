@@ -183,6 +183,12 @@ function renderCal() {
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
+  // 日付の下の行：その日の全部の時限にまとめて◯を付ける／外すチェック（押すと確認を出す）
+  h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
+  dl.forEach(d => {
+    const st = dayState(ym, y, m, d);
+    h += `<td><input type="checkbox" class="daychk" data-act="dayAll" data-d="${d}" ${st.all ? "checked" : ""} ${st.free.length ? "" : "disabled"} aria-label="${m}月${d}日の全部の時限"></td>`;
+  });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th scope="row" class="pl">${p}限<small>${P[p][0]}</small></th>`;
@@ -259,6 +265,19 @@ function scheduleSave(ym) {
   }, 700);
 }
 
+// その日の、予約が入っていない時限と、全部に◯が付いているか
+function dayState(ym, y, m, d) {
+  const ds = dateStr(new Date(y, m - 1, d));
+  const free = []; for (let p = 1; p <= 10; p++) if (!confirmedAt(ds, p)) free.push(p);
+  return { ds, free, all: free.length > 0 && free.every(p => S.avail[ym].has(slotKey(d, p))) };
+}
+function dayAllSheet(d) {
+  const { y, m } = MONTHS[S.mi], ym = ymOf(y, m), st = dayState(ym, y, m, d), on = st.all;
+  sheet(`<h3>${on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
+    <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : "に全て◯を付けますか？"}</p>
+    <label class="ackchk"><input type="checkbox" id="da_chk"> はい</label>
+    <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" id="da_ok" data-act="dayAllOk" data-mi="${S.mi}" data-d="${d}" data-on="${on ? 1 : 0}" disabled>OK</button></div>`);
+}
 function removeLockedSheet(ym, d, p) {
   const [y, m] = ym.split("-").map(Number);
   sheet(`<h3>この◯は外せません</h3><p>${label(dateStr(new Date(y, m - 1, d)), p)}<br><span style="color:var(--muted);font-size:13px">締切を過ぎているため、すでに付いている◯は外せません（指導員が予約を組んでいる途中のためです）。都合が悪くなった場合は学園にお電話ください。</span></p>
@@ -277,6 +296,7 @@ function bulkSheet() {
 
 document.addEventListener("change", e => {
   if (e.target.id === "nl_chk") document.getElementById("nl_ok").disabled = !e.target.checked;
+  if (e.target.id === "da_chk") document.getElementById("da_ok").disabled = !e.target.checked;
 });
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
@@ -293,6 +313,23 @@ document.addEventListener("click", async e => {
     if (unacked()) {
       try { await updateDoc(doc(db, "students", T), { ackAt: serverTimestamp() }); S.student.ackAt = { toMillis: () => Date.now() }; render(); }
       catch (err) { toast(friendlyError(err)); }
+    }
+  }
+  else if (a === "dayAll") { e.preventDefault(); dayAllSheet(+t.dataset.d); }
+  else if (a === "dayAllOk") {
+    if (!document.getElementById("da_chk")?.checked) return;
+    const mi = +t.dataset.mi, d = +t.dataset.d, { y, m } = MONTHS[mi], ym = ymOf(y, m), st = dayState(ym, y, m, d);
+    if (t.dataset.on === "1") {
+      // 締切を過ぎた月は、この画面で付けた◯しか外せない
+      const ng = st.free.filter(p => S.avail[ym].has(slotKey(d, p)) && !canRemove(ym, slotKey(d, p)));
+      st.free.filter(p => !ng.includes(p)).forEach(p => S.avail[ym].delete(slotKey(d, p)));
+      render(); scheduleSave(ym);
+      if (!ng.length) { closeSheet(); toast(`${m}月${d}日の◯を全て外しました`); }
+      else sheet(`<h3>外せない◯があります</h3><p>${m}月${d}日の <b>${ng.join("・")}限</b> は、締切を過ぎているため外せません（指導員が予約を組んでいる途中のためです）。ほかの◯は外しました。<br><span style="color:var(--muted);font-size:13px">都合が悪くなった場合は学園にお電話ください。</span></p>
+        <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
+    } else {
+      st.free.forEach(p => addSlot(ym, slotKey(d, p)));
+      closeSheet(); render(); scheduleSave(ym); toast(`${m}月${d}日の全ての時限に◯を付けました`);
     }
   }
   else if (a === "addOk") {
