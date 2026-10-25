@@ -340,8 +340,9 @@ function render() {
   const ds = days(); const wEnd = ds[ds.length - 1];
   let h = `<div class="topbar"><div><h1>予約の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員・担当 ${S.students.length}人</small></div>
     <span><button class="linkbtn" data-act="reload">最新の情報に更新</button></span></div>`;
-  h += `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
-  if (S.loading) { root.innerHTML = h + `<div class="loading">読み込み中…</div>`; return; }
+  // 週の切り替えは、マス目のすぐ上に出す（依頼者指定）
+  const weekNav = `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
+  if (S.loading) { root.innerHTML = h + weekNav + `<div class="loading">読み込み中…</div>`; return; }
   const top = h + `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
     ${S.confirmed ? '<span class="tag ok">確定済み</span>' : '<span class="tag draft">未確定</span>'}</div><div class="body">`;
   h = indexBanner();
@@ -397,7 +398,7 @@ function render() {
     h += `<div class="heatleg"><span><i style="background:var(--lv1-soft);border-color:var(--lv1)"></i>少ない（${T1}人以下）</span><span><i style="background:var(--lv2-soft);border-color:var(--lv2)"></i>中間（${T1 + 1}〜${T2}人）</span><span><i style="background:var(--lv3-soft);border-color:var(--lv3)"></i>多い（${T2 + 1}人以上）</span></div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">数字と棒の長さは、その枠に入れる人数（この週の最多${maxN}人を基準に色分け）</div>`;
   }
-  h += `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
+  h += weekNav + `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
   ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})</th>`; });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
