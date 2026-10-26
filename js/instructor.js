@@ -68,7 +68,7 @@ function staffItems() {
   const items = [];
   cancelReqGroups().forEach(b => { const s = ST(b.token), ps = b.pairId ? S.cancelReqs.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period).sort((m, n) => m - n) : [b.period]; items.push([`cr:${b.id}`, noticeRow("キャンセル希望", `${nsName(s)}<small>${mdS(b.date)}${ps.join("・")}限</small>`, "warn")]); });
   S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}:${dateStr(today())}`, noticeRow("本日検定", nsName(s), "ok")]));
-  const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
+  const unchecked = uncheckedItems();
   if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
   S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
     .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}:${e.date}`, noticeRow("期限", `${nsName(s)}<small>${e.label} ${mdS(e.date)}（${e.days < 0 ? `${-e.days}日過ぎ` : e.days === 0 ? "今日" : `あと${e.days}日`}）</small>`, "warn")]));
@@ -203,6 +203,8 @@ function groupAt(ds, a, type) {
 }
 // キャンセル希望を、危険予測・高速教習の組ごとに1件にまとめる
 const cancelReqGroups = () => S.cancelReqs.filter((b, i, a) => !b.pairId || a.findIndex(x => x.pairId === b.pairId && x.token === b.token) === i);
+// 終わった教習（実施・欠席のチェック待ち）。危険予測・高速教習は組の最後の時限まで終わってから出す（途中でチェックして組が割れないように）
+const uncheckedItems = () => lessonItems(S.pending.filter(b => b.status === "confirmed")).filter(it => it.bookings.every(b => bookingEnd(b) <= new Date()));
 const weekCount = tok => S.bookings.filter(b => b.token === tok).length;
 const dayCount = (tok, ds) => S.bookings.filter(b => b.token === tok && b.date === ds).length;
 // 今日より前の日は、空き・予約とも一切さわれない（遡って予約を入れない。依頼者指定）
@@ -354,7 +356,7 @@ function render() {
   const top = h + `<section class="panel"><div class="phead"><div><h2>割り当て</h2><small>マス目をタップして教習生を入れます</small></div>
     ${S.confirmed ? '<span class="tag ok">確定済み</span>' : '<span class="tag draft">未確定</span>'}</div><div class="body">`;
   h = indexBanner();
-  const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
+  const unchecked = uncheckedItems();
   if (unchecked.length) {
     h += `<div class="banner warn"><b>終わった教習のチェックが${unchecked.length}件あります</b><br><span style="font-size:12px">教習生が来たら「実施」、来なかったら「欠席」を押してください（欠席は教習生に通知されます）。</span>`;
     unchecked.forEach(it => {
@@ -641,6 +643,9 @@ async function removeBooking(b, why) {
 }
 // 終わった教習のチェック。result：done（実施）／absent（欠席）。実施は doneCount に足す（危険予測は2時限で1、単独高速は2）
 async function markResult(ids, result, mk = null) {
+  // 危険予測・高速教習は組の全部をまとめてチェックする
+  const pairs = new Set(S.pending.filter(b => ids.includes(b.id) && b.pairId).map(b => `${b.token}|${b.pairId}`));
+  ids = S.pending.filter(b => ids.includes(b.id) || (b.pairId && pairs.has(`${b.token}|${b.pairId}`))).map(b => b.id);
   const list = S.pending.filter(b => ids.includes(b.id));
   if (!list.length) return;
   const tok = list[0].token, s = ST(tok), it = lessonItems(list)[0];
@@ -926,4 +931,4 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render };
+if (DEMO) self.__t = { S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount };
