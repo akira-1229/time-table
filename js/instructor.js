@@ -415,9 +415,10 @@ function render() {
       const b = bookAt(d, p); const lb = label(d, p), bs = bookingsAt(d, p);
       const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}">`;
       if (isPast(d)) {
-        // 過ぎた日：予約は色だけ出して、押しても何も起きない
+        // 過ぎた日：予約の変更・取り消しはできない。押せるのは実施・欠席のチェックだけ（依頼者指定）
         const one = bs.length > 1 ? null : b;
-        h += `${td}<button class="wc past ${bs.length ? "bk" : ""} ${one && acked(one) ? "ackd" : ""} ${one && one.status === "draft" ? "draft" : ""} ${one && one.result || ""}" disabled aria-label="${lb}（過ぎた日）">${bs.length > 1 ? `${bs.length}人<small>高速</small>` : one ? `${esc(ST(one.token) ? shortName(ST(one.token)) : "?")}<small>${one.result === "done" ? "実施" : one.result === "absent" ? "欠席" : one.lessonType ? SHORT[one.lessonType] || PT(one.lessonType).label : ""}</small>` : ""}</button></td>`;
+        const act = bs.length > 1 ? `data-act="pastMulti" data-d="${d}" data-p="${p}"` : one ? `data-act="pastCheck" data-id="${one.id}"` : "disabled";
+        h += `${td}<button class="wc past ${bs.length ? "bk" : ""} ${one && acked(one) ? "ackd" : ""} ${one && one.status === "draft" ? "draft" : ""} ${one && one.result || ""}" ${act} aria-label="${lb}（過ぎた日）">${bs.length > 1 ? `${bs.length}人<small>高速</small>` : one ? `${esc(ST(one.token) ? shortName(ST(one.token)) : "?")}<small>${one.result === "done" ? "実施" : one.result === "absent" ? "欠席" : one.lessonType ? SHORT[one.lessonType] || PT(one.lessonType).label : ""}</small>` : ""}</button></td>`;
         return;
       }
       // 高速教習（3時限）に一緒に入れる人を選んでいる時は、その組の始まりの枠を光らせる
@@ -833,6 +834,24 @@ document.addEventListener("click", async e => {
         <div class="list">${hw3JoinBtn(b)}<button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
       }
     }
+    else if (a === "pastCheck") {
+      // 過ぎた日の予約：実施・欠席のチェック（と付け間違いの取り消し）だけ
+      const b = S.bookings.find(x => x.id === t.dataset.id), s = ST(b.token);
+      const ids = S.pending.filter(x => x.token === b.token && (b.pairId ? x.pairId === b.pairId : x.id === b.id)).map(x => x.id);
+      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(nm(s))}</b>${typeName(b) ? `<br>${typeName(b)}${b.pairId ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}<br><span style="font-size:13px;color:var(--muted)">過ぎた日の予約は、実施・欠席のチェックだけできます。</span></p>`;
+      if (b.result) sheet(`${head}<p><span class="tag ${b.result === "done" ? "ok" : "wait"}">${b.result === "done" ? "実施済み" : "欠席"}</span></p>
+        <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
+      else if (b.status !== "confirmed" || !ids.length) sheet(`${head}<p>確定されなかった予約のため、チェックはできません。</p><div class="list"><button class="btn full" data-act="close">閉じる</button></div>`);
+      else sheet(`${head}<p style="font-size:13px">教習生が来たら「実施」、来なかったら「欠席」を押してください（欠席は教習生に通知されます）。</p>
+        <div class="tools"><button class="btn" data-act="markAbsent" data-ids="${ids.join(",")}">欠席</button><button class="btn accent" data-act="markDone" data-ids="${ids.join(",")}">実施</button></div>
+        <div class="list" style="margin-top:10px"><button class="btn full" data-act="close">閉じる</button></div>`);
+    }
+    else if (a === "pastMulti") {
+      const bs = bookingsAt(t.dataset.d, +t.dataset.p);
+      sheet(`<h3>${label(t.dataset.d, +t.dataset.p)}　${PT("hw3").label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、実施・欠席のチェックができます。</p>
+        <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="pastCheck" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.result === "done" ? "実施" : x.result === "absent" ? "欠席" : "チェック前"}</div></div></button>`; }).join("")}</div>
+        <div class="list" style="margin-top:10px"><button class="btn full" data-act="close">閉じる</button></div>`);
+    }
     else if (a === "bookedMulti") {
       const ds = t.dataset.d, p = +t.dataset.p, bs = bookingsAt(ds, p);
       sheet(`<h3>${label(ds, p)}　${PT("hw3").label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
@@ -850,7 +869,7 @@ document.addEventListener("click", async e => {
         const s = ST(S.pending.find(b => b.id === ids[0])?.token), it = s && planOf(s).items.find(x => x.bookings.some(b => b.id === ids[0]));
         if (it && isMikiwame(s, it)) return mikiwameSheet(s, it, ids);
       }
-      t.disabled = true; await markResult(ids, a === "markDone" ? "done" : "absent");
+      t.disabled = true; closeSheet(); await markResult(ids, a === "markDone" ? "done" : "absent");
     }
     else if (a === "mkOk") {
       const val = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
