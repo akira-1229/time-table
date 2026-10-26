@@ -29,7 +29,6 @@ async function load() {
     const sdoc = await getDoc(doc(db, "students", T));
     if (!sdoc.exists()) return fail("このQRコードは使えなくなっています。事務所で新しいQRコードを受け取ってください。");
     S.student = sdoc.data();
-    if (S.student.active === false) return fail("現在、このアカウントは利用できません。事務所にお問い合わせください。");
     for (const { y, m } of MONTHS) {
       const md_ = await getDoc(doc(db, "students", T, "months", ymOf(y, m)));
       S.avail[ymOf(y, m)] = new Set(md_.exists() ? md_.data().slots || [] : []);
@@ -164,6 +163,10 @@ function renderSet() {
 }
 document.addEventListener("pref:change", () => { if (S.student) render(); });
 
+// 利用停止中（指導員が「停止」にした人）は◯を付けられない（依頼者指定の文言）
+const stopped = () => S.student && S.student.active === false;
+const STOP_MSG = "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
+const stopSheet = () => sheet(`<h3>◯を付けられません</h3><p style="font-size:16px">${STOP_MSG}</p><div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
 const lockedNote = () => CFG.noRemoveAfterDeadline
   ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
   : "予約が入っていない枠は変更できます。";
@@ -171,6 +174,7 @@ function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   let h = "";
   const filled = set.size > 0, open = !pastDeadline(ym);
+  if (stopped()) h += `<div class="banner warn">${STOP_MSG}</div>`;
   if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;
   else if (open) h += `<div class="banner warn"><b>${m}月分の入力締切は${dlText(ym)}です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else if (S.mi === 1 && !filled) h += `<div class="banner warn"><b>${m}月分の入力締切（${dlText(ym)}）を過ぎています。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
@@ -182,12 +186,13 @@ function renderCal() {
   // 月の切り替えは、表のすぐ上に出す（指導員画面の週の切り替えと同じ位置。依頼者指定）
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
-  dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
+  const isToday = d => S.mi === 0 && d === now.getDate(), tc = (d, last) => isToday(d) ? ` class="tday${last ? " tN" : ""}"` : "";
+  dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}${isToday(d) ? " tday t1" : ""}">${d}<small>${isToday(d) ? "今日" : WD[w]}</small></th>`; });
   // 日付の下の行：その日の全部の時限にまとめて◯を付ける／外すチェック（押すと確認を出す）
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
   dl.forEach(d => {
     const st = dayState(ym, y, m, d);
-    h += `<td><input type="checkbox" class="daychk" data-act="dayAll" data-d="${d}" ${st.all ? "checked" : ""} ${st.free.length ? "" : "disabled"} aria-label="${m}月${d}日の全部の時限"></td>`;
+    h += `<td${tc(d)}><input type="checkbox" class="daychk" data-act="dayAll" data-d="${d}" ${st.all ? "checked" : ""} ${st.free.length ? "" : "disabled"} aria-label="${m}月${d}日の全部の時限"></td>`;
   });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
@@ -196,10 +201,10 @@ function renderCal() {
       const ds = dateStr(new Date(y, m - 1, d));
       const b = confirmedAt(ds, p);
       if (b) {
-        h += `<td><button class="cell ${b.cancelRequested ? "req" : "booked"}" data-act="locked" data-id="${b.id}" aria-label="${label(ds, p)} 予約済み">予</button></td>`;
+        h += `<td${tc(d, p === 10)}><button class="cell ${b.cancelRequested ? "req" : "booked"}" data-act="locked" data-id="${b.id}" aria-label="${label(ds, p)} 予約済み">予</button></td>`;
       } else {
         const on = set.has(slotKey(d, p));
-        h += `<td><button class="cell ${on ? "on" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}">${on ? "◯" : ""}</button></td>`;
+        h += `<td${tc(d, p === 10)}><button class="cell ${on ? "on" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}">${on ? "◯" : ""}</button></td>`;
       }
     });
     h += `</tr>`;
@@ -273,6 +278,7 @@ function dayState(ym, y, m, d) {
 }
 function dayAllSheet(d) {
   const { y, m } = MONTHS[S.mi], ym = ymOf(y, m), st = dayState(ym, y, m, d), on = st.all;
+  if (!on && stopped()) return stopSheet();
   sheet(`<h3>${on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
     <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : "に全て◯を付けますか？"}</p>
     <label class="ackchk"><input type="checkbox" id="da_chk"> はい</label>
@@ -328,11 +334,13 @@ document.addEventListener("click", async e => {
       else sheet(`<h3>外せない◯があります</h3><p>${m}月${d}日の <b>${ng.join("・")}限</b> は、締切を過ぎているため外せません（指導員が予約を組んでいる途中のためです）。ほかの◯は外しました。<br><span style="color:var(--muted);font-size:13px">都合が悪くなった場合は学園にお電話ください。</span></p>
         <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
     } else {
+      if (stopped()) return stopSheet();
       st.free.forEach(p => addSlot(ym, slotKey(d, p)));
       closeSheet(); render(); scheduleSave(ym); toast(`${m}月${d}日の全ての時限に◯を付けました`);
     }
   }
   else if (a === "addOk") {
+    if (stopped()) return stopSheet();
     const mi = +t.dataset.mi, { y, m } = MONTHS[mi], ym = ymOf(y, m), k = slotKey(+t.dataset.d, +t.dataset.p);
     closeSheet(); addSlot(ym, k); render(); scheduleSave(ym);
   }
@@ -344,6 +352,7 @@ document.addEventListener("click", async e => {
       S.avail[ym].delete(k);
       render(); scheduleSave(ym);
     } else {
+      if (stopped()) return stopSheet();
       // 指が触れただけで◯が付かないように、付ける前に確認する
       const ds = dateStr(new Date(y, m - 1, +t.dataset.d)), p = +t.dataset.p;
       sheet(`<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>
@@ -351,6 +360,7 @@ document.addEventListener("click", async e => {
     }
   }
   else if (a === "copy") {
+    if (stopped()) return stopSheet();
     // 今月の曜日ごとのパターン（よく◯が付いている時限）を来月に写す
     const cur = MONTHS[0], nx = MONTHS[1]; const pat = {};
     for (let d = 1; d <= daysIn(cur.y, cur.m); d++) {
@@ -364,12 +374,14 @@ document.addEventListener("click", async e => {
     }
     render(); scheduleSave(ym); toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
   }
+  else if (a === "bulk" && stopped()) stopSheet();
   else if (a === "bulk") { S.bulkW = new Set(); S.bulkP = new Set(); bulkSheet(); }
   else if (a === "bw") { const v = +t.dataset.v; S.bulkW.has(v) ? S.bulkW.delete(v) : S.bulkW.add(v); bulkSheet(); }
   else if (a === "bp") { const v = +t.dataset.v; S.bulkP.has(v) ? S.bulkP.delete(v) : S.bulkP.add(v); bulkSheet(); }
   else if (a === "bulkApply") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); let n = 0;
-    for (let d = 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
+    // 今月は今日から（過ぎた日には付けない）
+    for (let d = S.mi === 0 ? now.getDate() : 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
       const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { addSlot(ym, slotKey(d, p)); n++; }
     });
     closeSheet(); render(); if (n) scheduleSave(ym); toast(n ? `${n}枠に◯を付けました` : "曜日と時限を選んでください");
@@ -383,13 +395,15 @@ document.addEventListener("click", async e => {
   else if (a === "reqCancel") {
     const b = S.bookings.find(x => x.id === t.dataset.id); t.disabled = true;
     try {
-      await updateDoc(doc(db, "students", T, "bookings", b.id), { cancelRequested: true, cancelRequestedAt: serverTimestamp() });
+      // 危険予測・高速教習は2〜3時限で1組。組の全部にキャンセル希望を付ける（1時限だけキャンセルにならないように）
+      const group = b.pairId ? S.bookings.filter(x => x.pairId === b.pairId && x.status === "confirmed") : [b];
+      for (const x of group) await updateDoc(doc(db, "students", T, "bookings", x.id), { cancelRequested: true, cancelRequestedAt: serverTimestamp() });
       await addDoc(collection(db, "outbox"), {
         to: "instructor", type: "cancelRequest", studentToken: T, instructorUid: S.student.instructorUid,
-        title: "キャンセル希望", body: `${S.student.name}さん ${label(b.date, b.period)}`, createdAt: serverTimestamp(), sent: false
+        title: "キャンセル希望", body: `${S.student.name}さん ${b.pairId ? `${md(b.date)} ${group.map(x => x.period).sort((m, n) => m - n).join("・")}限` : label(b.date, b.period)}`, createdAt: serverTimestamp(), sent: false
       });
       sendNow();
-      b.cancelRequested = true; closeSheet(); render(); toast("キャンセル希望を送りました");
+      group.forEach(x => { x.cancelRequested = true; }); closeSheet(); render(); toast("キャンセル希望を送りました");
     } catch (err) { toast(friendlyError(err)); t.disabled = false; }
   }
   else if (a === "ack") {

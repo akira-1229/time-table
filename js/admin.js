@@ -263,7 +263,6 @@ function editSheet(s) {
   const isNew = !s; s = s || { studentNo: "", name: "", stage: 1, active: true };
   const opt = (v, cur, t = v) => `<option value="${esc(v)}" ${String(cur ?? "") === String(v) ? "selected" : ""}>${esc(t)}</option>`;
   sheet(`<h3>${isNew ? "教習生を追加" : "教習生を編集"}</h3>
-  <datalist id="dl_lic">${(CFG.licenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
   <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田 太郎"></div>
   <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ タロウ"></div></div>
@@ -271,16 +270,16 @@ function editSheet(s) {
   ${S.isAdmin ? `<div class="field"><label for="f_in">担当指導員<span style="color:var(--lv3)">＊必須</span></label><select id="f_in">${opt("", s.instructorUid || (S.isInst ? S.uid : ""), "選んでください")}${S.instructors.map(i => opt(i.uid, s.instructorUid || (S.isInst ? S.uid : ""), i.name)).join("")}</select></div>` : "<div></div>"}</div>
   <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
   <div></div></div>
-  <div class="row"><div class="field"><label for="f_lic">希望免許</label><input id="f_lic" list="dl_lic" value="${esc(s.license || "")}" autocomplete="off"></div>
+  <div class="row"><div class="field"><label for="f_lic">希望免許</label><select id="f_lic">${opt("", s.license || "", "選んでください")}${[...new Set([...(CFG.licenseTypes || []), ...(s.license ? [s.license] : [])])].map(x => opt(x, s.license || "")).join("")}</select></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
   <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
   <h3 style="margin-top:6px">教習の状況</h3>
   <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
   <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
   <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
-  <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div>
-  <div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div></div>
-  <div class="row"><div class="field"><label for="f_hd">高速教習</label><select id="f_hd">${opt(0, s.hwDone ? 1 : 0, "まだ")}${opt(1, s.hwDone ? 1 : 0, "受講済み")}</select></div><div></div></div>
+  <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div><div></div></div>
+  <div class="row" id="f_sp" ${+s.stage === 2 ? "" : "hidden"}><div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div>
+  <div class="field"><label for="f_hd">高速教習</label><select id="f_hd">${opt(0, s.hwDone ? 1 : 0, "まだ")}${opt(1, s.hwDone ? 1 : 0, "受講済み")}</select></div></div>
   <div class="field"><label for="f_idl">空き時間の入力締切</label><select id="f_idl">${idlOptions(s.inputDeadline || "")}</select>
     <span style="font-size:12px;color:var(--muted)">社会人などで月末・月初に予定が分かる人は、締切を遅らせてください。締切を過ぎると、教習生は◯を外せなくなります。</span></div>
   <div class="row"><div class="field"><label for="f_min1">第1段階の最低教習時限</label><input id="f_min1" type="number" min="1" max="40" inputmode="numeric" value="${esc(s.minLessons1 || "")}" placeholder="${(CFG.lessons[1] || {}).min || 12}（標準）"></div><div></div></div>
@@ -290,6 +289,46 @@ function editSheet(s) {
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
+}
+
+// 高速教習・危険予測を受講済みの人を、前に戻せないようにする（受講済み→まだ、時限数を減らす、第1段階に戻す）
+function backwardsError(old, data) {
+  const L2 = CFG.lessons[2] || {}, hwNo = L2.hwNo || 13, kkNo = L2.kikenNo || 12;
+  const total = data.priorDone + (old && old.stage === data.stage ? old.doneCount || 0 : 0);
+  if (old && old.stage === 2 && data.stage === 1 && (old.hwDone || old.kikenDone)) return `${old.hwDone ? "高速教習" : (CFG.kiken || {}).label || "危険予測"}を受講済みのため、第1段階には戻せません`;
+  if (old && old.stage === 2 && data.stage === 2) {
+    if (old.hwDone && !data.hwDone) return "高速教習を受講済みの人を「まだ」に戻すことはできません";
+    if (old.kikenDone && !data.kikenDone) return `${(CFG.kiken || {}).label || "危険予測"}を受講済みの人を「まだ」に戻すことはできません`;
+  }
+  // 時限数・受講済みを変えた時だけ確かめる（前からのデータで、名前などの保存が止まらないように）
+  const changed = !old || data.priorDone !== (old.priorDone || 0) || data.hwDone !== !!old.hwDone || data.kikenDone !== !!old.kikenDone || data.stage !== old.stage;
+  if (!changed) return "";
+  if (data.hwDone && total < hwNo + 1) return `高速教習を受講済みの人は、受けた時限数が${hwNo + 1}時限より少なくなりません（今の入力では${total}時限です）`;
+  if (data.kikenDone && total < kkNo) return `${(CFG.kiken || {}).label || "危険予測"}を受講済みの人は、受けた時限数が${kkNo}時限より少なくなりません（今の入力では${total}時限です）`;
+  return "";
+}
+// おかしな日付の警告（保存はできる）。教習開始日が確定済みの予約より後、前後関係の逆転、未来の生年月日など
+async function dateWarnings(old, d) {
+  const w = [], td = today(), tds = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, "0")}-${String(td.getDate()).padStart(2, "0")}`;
+  const name = Object.fromEntries([["birthDate", "生年月日"], ...DATES]);
+  for (const k of ["birthDate", ...DATES.map(x => x[0])]) {
+    const y = d[k] ? +d[k].slice(0, 4) : 0;
+    if (y && (y < 1920 || y > td.getFullYear() + 5)) w.push(`${name[k]}の年（${y}年）がおかしくないか確認してください`);
+  }
+  if (d.birthDate && d.birthDate > tds) w.push("生年月日が今日より後になっています");
+  if (d.birthDate && d.startDate && d.birthDate >= d.startDate) w.push("生年月日が教習開始日より後になっています");
+  const after = (k1, k2, txt) => { if (d[k1] && d[k2] && d[k2] < d[k1]) w.push(txt || `${name[k2]}（${d[k2]}）が${name[k1]}（${d[k1]}）より前になっています`); };
+  after("startDate", "classStart"); after("startDate", "skillStart"); after("startDate", "karimenIssued");
+  if (d.startDate && d.deadline && d.deadline <= d.startDate) w.push(`教習期限日（${d.deadline}）が教習開始日（${d.startDate}）より前になっています`);
+  if (d.karimenIssued && d.karimenIssued > tds) w.push(`仮免交付日（${d.karimenIssued}）が今日より後になっています`);
+  after("karimenIssued", "karimenExpiry");
+  if (old && d.startDate) {
+    // 確定済みの予約（取り消し以外）の一番早い日より、教習開始日が後になっていないか
+    const bs = (await getDocs(collection(db, "students", old.token, "bookings"))).docs.map(x => x.data()).filter(b => b.status === "confirmed");
+    const first = bs.map(b => b.date).sort()[0];
+    if (first && d.startDate > first) w.push(`教習開始日（${d.startDate}）が、確定済みの予約（${first}）より後になっています`);
+  }
+  return w;
 }
 
 // 入力締切の選択肢：標準／前の月の1〜30日・末日／その月の1〜15日
@@ -335,11 +374,14 @@ function printCards() {
 }
 
 document.addEventListener("input", e => {
+  if (e.target.id === "f_startDate") { const x = document.getElementById("f_classStart"); if (x) x.value = e.target.value; return; }
   if (e.target.id === "f_karimenIssued") { const x = document.getElementById("f_karimenExpiry"); if (x) x.value = karimenExpiryOf(e.target.value); return; }
   if (e.target.id === "f_birth") { const el = document.getElementById("f_age"); if (el) el.textContent = e.target.value ? `今日時点で ${ageText(e.target.value)}` : ""; return; }
   if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
 document.addEventListener("change", async e => {
   if (e.target.id === "msort") { S.msort = e.target.value; render(); return; }
+  // 危険予測・高速教習は第2段階だけ（第1段階では出さない）
+  if (e.target.id === "f_st") { const x = document.getElementById("f_sp"); if (x) x.hidden = e.target.value !== "2"; return; }
   if (e.target.dataset.act !== "reassign") return;
   const s = S.students.find(x => x.token === e.target.dataset.s), uid = e.target.value;
   if (!uid || !confirm(`${s.name}さんの担当を${iname(uid)}さんに変えます。すでに入っている予約は、前の担当のまま残ります。よろしいですか？`)) { render(); return; }
@@ -389,7 +431,11 @@ document.addEventListener("click", async e => {
       data.kikenDone = document.getElementById("f_kd").value === "1";
       data.hwDone = document.getElementById("f_hd").value === "1";
       { const m1 = num("f_min1", 40); data.minLessons1 = m1 ? m1 : null; }
+      if (data.stage !== 2) { data.kikenDone = false; data.hwDone = false; }
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
+      const ng = backwardsError(old, data); if (ng) return toast(ng);
+      const warns = await dateWarnings(old, data);
+      if (warns.length && !confirm(`日付を確認してください。\n\n${warns.map(w => `・${w}`).join("\n")}\n\nこのまま保存しますか？`)) return;
       if (old && old.stage !== data.stage) {
         // 段階が変わったら、その段階の時限数は0から数え直す（入力欄を変えていなければ0にする）
         if (data.priorDone === (old.priorDone || 0)) data.priorDone = 0;

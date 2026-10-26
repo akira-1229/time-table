@@ -4,7 +4,7 @@
 :root{
   --page:#FFFFFF; --bg:#F2F4F7; --surface:#FFFFFF; --ink:#1F2A37; --muted:#4B5563; --line:#DDE2E8;
   --blue:#1F6FB2; --blue-soft:#E3EEF8; --orange:#C46A12; --orange-soft:#FDEEDD;
-  --green:#1E7A4F; --green-soft:#E1F3EA; --lock:#7A4A12; --lv1:#2E8B57; --lv1-soft:#E3F4EA; --lv2:#C99A06; --lv2-soft:#FDF5D6; --lv3:#D0453A; --lv3-soft:#FBE4E2;
+  --green:#1E7A4F; --green-soft:#E1F3EA; --lock:#7A4A12; --lv1:#2E8B57; --lv1-soft:#E3F4EA; --lv2:#C99A06; --lv2-soft:#FDF5D6; --lv3:#D0453A; --lv3-soft:#FBE4E2; --today:#D6336C;
   --nav:#FFFFFF; --shadow:0 1px 3px rgba(16,24,40,.08); --on-accent:#FFFFFF;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -13,14 +13,14 @@
   :root:not([data-theme="light"]){
     --page:#000000; --bg:#161616; --surface:#0D0D0D; --ink:#ECECEC; --muted:#9C9C9C; --line:#2A2A2A;
     --blue:#82B4E6; --blue-soft:#14222F; --orange:#E2A061; --orange-soft:#2B1E12;
-    --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614;
+    --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614; --today:#FF7AA8;
     --nav:#0A0A0A; --shadow:none; --on-accent:#0B0B0B; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --page:#000000; --bg:#161616; --surface:#0D0D0D; --ink:#ECECEC; --muted:#9C9C9C; --line:#2A2A2A;
   --blue:#82B4E6; --blue-soft:#14222F; --orange:#E2A061; --orange-soft:#2B1E12;
-  --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614;
+  --green:#6CC59B; --green-soft:#11251B; --lock:#EBC28F; --lv1:#5CBF88; --lv1-soft:#10241A; --lv2:#D9B54E; --lv2-soft:#2A2410; --lv3:#E97A6E; --lv3-soft:#2E1614; --today:#FF7AA8;
   --nav:#0A0A0A; --shadow:none; --on-accent:#0B0B0B; color-scheme:dark;
 }
 :root[data-theme="light"]{color-scheme:light}
@@ -340,3 +340,14 @@ body.pc #setWrap,body.pc #ntcWrap{max-width:760px;padding:20px 28px 40px}
 .calt tr.dayall td{text-align:center;padding:2px 0 4px}
 .calt .daychk{width:20px;height:20px;margin:0;accent-color:var(--blue);cursor:pointer}
 .calt tr.dayall th.pl small{font-size:11px;color:var(--muted)}
+
+/* 今日の列を線で囲む（指導員のマス目・教習生の表）。セルの外側に縦線を引き、見出しで上、最後の行で下を閉じる */
+.tday{position:relative}
+.tday::after{content:"";position:absolute;left:-2px;right:-2px;top:-2px;bottom:-2px;border-left:2.5px solid var(--today);border-right:2.5px solid var(--today);pointer-events:none;z-index:1}
+.tday.t1::after{border-top:2.5px solid var(--today);border-radius:8px 8px 0 0}
+.tday.tN::after{border-bottom:2.5px solid var(--today);border-radius:0 0 8px 8px}
+th.tday{color:var(--today)!important;font-weight:700}
+th.tday small{color:var(--today)!important;font-weight:700}
+/* 指導員：過ぎた日のマスは押せない（予約の色はそのまま） */
+.wc.past{cursor:default}
+.wc.past:not(.bk){opacity:.45}

@@ -66,7 +66,7 @@ let noticeAt = 0, seenKeys = null, staffPending = false;
 const nsName = s => esc(nm(s));
 function staffItems() {
   const items = [];
-  S.cancelReqs.forEach(b => { const s = ST(b.token); items.push([`cr:${b.id}`, noticeRow("キャンセル希望", `${nsName(s)}<small>${mdS(b.date)}${b.period}限</small>`, "warn")]); });
+  cancelReqGroups().forEach(b => { const s = ST(b.token), ps = b.pairId ? S.cancelReqs.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period).sort((m, n) => m - n) : [b.period]; items.push([`cr:${b.id}`, noticeRow("キャンセル希望", `${nsName(s)}<small>${mdS(b.date)}${ps.join("・")}限</small>`, "warn")]); });
   S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}:${dateStr(today())}`, noticeRow("本日検定", nsName(s), "ok")]));
   const unchecked = lessonItems(S.pending.filter(b => b.status === "confirmed" && bookingEnd(b) <= new Date()));
   if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
@@ -199,8 +199,12 @@ function hw3GroupAt(ds, a) {
   const ok = toks.every(t => { const mine = list.filter(b => b.token === t).map(b => b.period).sort((x, y) => x - y); return sameSet(mine, ps); });
   return ok ? toks : null;
 }
+// キャンセル希望を、危険予測・高速教習の組ごとに1件にまとめる
+const cancelReqGroups = () => S.cancelReqs.filter((b, i, a) => !b.pairId || a.findIndex(x => x.pairId === b.pairId && x.token === b.token) === i);
 const weekCount = tok => S.bookings.filter(b => b.token === tok).length;
 const dayCount = (tok, ds) => S.bookings.filter(b => b.token === tok && b.date === ds).length;
+// 今日より前の日は、空き・予約とも一切さわれない（遡って予約を入れない。依頼者指定）
+const isPast = ds => ds < dateStr(today());
 const isFree = (tok, ds, p) => { const d = parseDate(ds); return !!(S.avail[tok] && S.avail[tok][ds.slice(0, 7)] && S.avail[tok][ds.slice(0, 7)].has(slotKey(d.getDate(), p))); };
 const dayPeriods = (tok, ds) => S.bookings.filter(b => b.token === tok && b.date === ds).map(b => b.period);
 const sameSet = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -215,6 +219,7 @@ const inDarkSeason = ds => {
 // 連続3時限は高速教習（3時限）だけ。高速教習・危険予測・単独高速は evaluatePair で判定する
 const linkedP = (x, y) => y === x + 1 && !(CFG.breakAfter || []).includes(x);   // 休みをはさまずに続いているか
 function evaluate(s, ds, p) {
+  if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
   if (bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
   if (dayCount(s.token, ds) >= dayMax(s)) return { ok: false, reason: `この日は上限の${dayMax(s)}時限まで入っています` };
@@ -263,6 +268,7 @@ function isCombo(list) {
 //   ok:true（dark:true は日没が早い期間の警告付き）／ok:false（reason に理由）
 function evaluatePair(s, ds, a, type = "kiken") {
   const L = PT(type).label, ps = span(a, type);
+  if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
   if (!hasSpecial(s)) return { ok: false, reason: `第${s.stage}段階には${L}はありません` };
   if (!pairOk(a, type)) return { ok: false, reason: type === "hw3"
     ? `${spanText(a, type)}限の${L}は入れられません（${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみ）`
@@ -366,10 +372,11 @@ function render() {
   const gones = S.bookings.filter(goneDraft);
   if (gones.length) h += `<div class="banner warn"><b>教習生が◯を外した未確定の予約が${gones.length}件あります</b>（赤い枠）。取り消すか、教習生に確認してください。</div>`;
   if (S.cancelReqs.length) {
-    h += `<div class="banner warn"><b>キャンセル希望が${S.cancelReqs.length}件あります</b>`;
-    S.cancelReqs.forEach(b => {
-      const s = ST(b.token);
-      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${label(b.date, b.period)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="reject" data-id="${b.id}">却下</button><button class="btn accent" data-act="approve" data-id="${b.id}">承認</button></span></div>`;
+    const reqs = cancelReqGroups();
+    h += `<div class="banner warn"><b>キャンセル希望が${reqs.length}件あります</b>`;
+    reqs.forEach(b => {
+      const s = ST(b.token), ps = S.cancelReqs.filter(x => b.pairId ? x.pairId === b.pairId && x.token === b.token : x.id === b.id).map(x => x.period).sort((m, n) => m - n);
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${b.pairId ? `${md(b.date)} ${ps.join("・")}限${ps.length < LEN(b.lessonType) ? "を含む" : ""}${typeName(b)}（${LEN(b.lessonType)}時限まとめて）` : label(b.date, b.period)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="reject" data-id="${b.id}">却下</button><button class="btn accent" data-act="approve" data-id="${b.id}">承認</button></span></div>`;
     });
     h += `</div>`;
   }
@@ -399,33 +406,41 @@ function render() {
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">数字と棒の長さは、その枠に入れる人数（この週の最多${maxN}人を基準に色分け）</div>`;
   }
   h += weekNav + `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
-  ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})</th>`; });
+  const tds = dateStr(today()), tc = d => d === tds ? "tday" : "";
+  ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th class="pl">${p}限<small>${P[p][0]}</small></th>`;
     ds.forEach(d => {
       const b = bookAt(d, p); const lb = label(d, p), bs = bookingsAt(d, p);
+      const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}">`;
+      if (isPast(d)) {
+        // 過ぎた日：予約は色だけ出して、押しても何も起きない
+        const one = bs.length > 1 ? null : b;
+        h += `${td}<button class="wc past ${bs.length ? "bk" : ""} ${one && acked(one) ? "ackd" : ""} ${one && one.status === "draft" ? "draft" : ""} ${one && one.result || ""}" disabled aria-label="${lb}（過ぎた日）">${bs.length > 1 ? `${bs.length}人<small>高速</small>` : one ? `${esc(ST(one.token) ? shortName(ST(one.token)) : "?")}<small>${one.result === "done" ? "実施" : one.result === "absent" ? "欠席" : one.lessonType ? SHORT[one.lessonType] || PT(one.lessonType).label : ""}</small>` : ""}</button></td>`;
+        return;
+      }
       // 高速教習（3時限）に一緒に入れる人を選んでいる時は、その組の始まりの枠を光らせる
       const joinEv = b && pk && S.ptype === "hw3" ? evaluatePair(pk, d, p, "hw3") : null;
       if (joinEv && joinEv.ok) {
-        h += `<td><button class="wc cand hw" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="hw3" aria-label="${lb}から高速教習（3時限）に一緒に入れる">${spanText(p, "hw3")}<small>一緒に${joinEv.join + 1}/${HW3_CAP()}人</small></button></td>`;
+        h += `${td}<button class="wc cand hw" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="hw3" aria-label="${lb}から高速教習（3時限）に一緒に入れる">${spanText(p, "hw3")}<small>一緒に${joinEv.join + 1}/${HW3_CAP()}人</small></button></td>`;
       } else if (bs.length > 1) {
         const allAck = bs.every(acked);
-        h += `<td><button class="wc bk ${allAck ? "ackd" : ""} ${bs.every(x => x.status === "draft") ? "draft" : ""}" data-act="bookedMulti" data-d="${d}" data-p="${p}" aria-label="${lb} 高速教習 ${bs.length}人">${bs.length}人<small>高速</small></button></td>`;
+        h += `${td}<button class="wc bk ${allAck ? "ackd" : ""} ${bs.every(x => x.status === "draft") ? "draft" : ""}" data-act="bookedMulti" data-d="${d}" data-p="${p}" aria-label="${lb} 高速教習 ${bs.length}人">${bs.length}人<small>高速</small></button></td>`;
       } else if (b) {
         const s = ST(b.token);
         const gone = goneDraft(b);
-        h += `<td><button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(nm(s))}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? SHORT[b.lessonType] || PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
+        h += `${td}<button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(nm(s))}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? SHORT[b.lessonType] || PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
       } else if (pk && S.ptype && hasSpecial(pk)) {
         const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
-        h += `<td><button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
+        h += `${td}<button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
       } else if (pk) {
         const ok = evaluate(pk, d, p).ok !== false;
-        h += `<td><button class="wc ${ok ? "cand" : "off"}" ${ok ? `data-act="assign" data-s="${pk.token}" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb}${ok ? " 割り当て可" : ""}">${ok ? "◯" : ""}</button></td>`;
+        h += `${td}<button class="wc ${ok ? "cand" : "off"}" ${ok ? `data-act="assign" data-s="${pk.token}" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb}${ok ? " 割り当て可" : ""}">${ok ? "◯" : ""}</button></td>`;
       } else {
         const n = S.students.filter(s => isFree(s.token, d, p)).length;
         const c = n === 0 ? "" : n <= T1 ? "lv1" : n <= T2 ? "lv2" : "lv3";
-        h += `<td><button class="wc ${c}" ${n && S.mode === "slot" ? `data-act="open" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb} 空き${n}人">${n ? `${n}人<span class="bar"><i style="width:${Math.round(n / maxN * 100)}%"></i></span>` : "—"}</button></td>`;
+        h += `${td}<button class="wc ${c}" ${n && S.mode === "slot" ? `data-act="open" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb} 空き${n}人">${n ? `${n}人<span class="bar"><i style="width:${Math.round(n / maxN * 100)}%"></i></span>` : "—"}</button></td>`;
       }
     });
     h += `</tr>`;
@@ -587,10 +602,17 @@ async function assign(tok, ds, p, gk) {
   else toast(`${label(ds, p)} に${nm(s)}を入れました`);
   render();
 }
-async function removeBooking(b, why) {
-  // 危険予測・単独高速は2時限で1組。片方だけ残らないように、組ごと取り消す
-  const group = b.pairId ? S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token) : [b];
+// 危険予測・高速教習の組（2時限・3時限）を全部集める。表示中の週に無い予約（別の週のキャンセル希望など）もあるので、DBから読む
+async function pairGroup(b) {
+  if (!b.pairId) return [b];
+  const snap = await getDocs(query(collection(db, "students", b.token, "bookings"), where("pairId", "==", b.pairId)));
+  const group = snap.docs.map(d => ({ id: d.id, token: b.token, ...d.data() })).filter(x => x.status !== "cancelled");
   if (!group.some(x => x.id === b.id)) group.push(b);
+  return group.sort((x, y) => x.period - y.period);
+}
+async function removeBooking(b, why) {
+  // 危険予測・高速教習は組で1つ。1時限だけ残らないように、必ず組ごと取り消す
+  const group = await pairGroup(b);
   for (const x of group) {
     const ref = doc(db, "students", x.token, "bookings", x.id);
     if (x.status === "draft") await deleteDoc(ref);
@@ -658,7 +680,7 @@ function mikiwameSheet(s, it, ids) {
 }
 // チェックの付け間違いを戻す
 async function unmarkResult(b) {
-  const group = (b.pairId ? S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token) : [b]);
+  const group = await pairGroup(b);
   const s = ST(b.token), it = lessonItems(group)[0], was = b.result;
   const batch = writeBatch(db);
   group.forEach(x => batch.update(doc(db, "students", x.token, "bookings", x.id), { result: null, resultAt: null, updatedAt: serverTimestamp() }));
@@ -675,7 +697,7 @@ async function unmarkResult(b) {
     s.doneCount = (s.doneCount || 0) - it.units; if (it.lessonType === "kiken") s.kikenDone = false; if (isHwType(it.lessonType)) s.hwDone = false;
     Object.keys(s).forEach(k => { if (/^mikiwame\d$/.test(k) && s[k] && (s[k].bookingIds || []).some(id => group.some(x => x.id === id))) s[k] = null; });
   }
-  group.forEach(x => { x.result = null; if (!S.pending.some(y => y.id === x.id)) S.pending.push(x); });
+  group.forEach(x => { x.result = null; const lb = S.bookings.find(y => y.id === x.id); if (lb) lb.result = null; if (!S.pending.some(y => y.id === x.id)) S.pending.push(lb || x); });
   render(); toast("チェックを取り消しました");
 }
 
@@ -847,10 +869,11 @@ document.addEventListener("click", async e => {
     }
     else if (a === "reject") {
       const b = S.cancelReqs.find(x => x.id === t.dataset.id); t.disabled = true;
-      await updateDoc(doc(db, "students", b.token, "bookings", b.id), { cancelRequested: false, updatedAt: serverTimestamp() });
-      await notifyStudent(b.token, "cancelRejected", "キャンセル希望についてのお知らせ", `${label(b.date, b.period)} は予約のままです。詳しくは学園までお問い合わせください。`);
-      S.cancelReqs = S.cancelReqs.filter(x => x.id !== b.id);
-      const lb = S.bookings.find(x => x.id === b.id); if (lb) lb.cancelRequested = false;
+      const group = await pairGroup(b), ids = group.map(x => x.id);
+      for (const x of group) await updateDoc(doc(db, "students", x.token, "bookings", x.id), { cancelRequested: false, updatedAt: serverTimestamp() });
+      await notifyStudent(b.token, "cancelRejected", "キャンセル希望についてのお知らせ", `${md(b.date)} ${group.map(x => x.period).join("・")}限 は予約のままです。詳しくは学園までお問い合わせください。`);
+      S.cancelReqs = S.cancelReqs.filter(x => !ids.includes(x.id));
+      S.bookings.forEach(x => { if (ids.includes(x.id)) x.cancelRequested = false; });
       render(); toast("却下を通知しました");
     }
     else if (a === "renotify") { await notifyStudent(t.dataset.s, "reminder", "予約の確認をお願いします", "アプリを開いて「確認しました」を押してください。"); render(); toast("再通知しました"); }
