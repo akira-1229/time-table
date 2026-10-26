@@ -188,13 +188,15 @@ const noText = (s, it) => it ? `${noRange(it)}時限目${it.no + it.units - 1 > 
 /* ---------- 判定 ---------- */
 const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p);
 const bookingsAt = (ds, p) => S.bookings.filter(b => b.date === ds && b.period === p);
-// 高速教習（3時限）は1つの枠に何人まで一緒に入れるか
-const HW3_CAP = () => (CFG.hw3 || {}).capacity || 3;
-// a限から始まる高速教習（3時限）の組に入っている教習生（a〜a+2限がその組の予約だけの時）。ほかの予約が混じっていれば null
-function hw3GroupAt(ds, a) {
-  const ps = [a, a + 1, a + 2], list = S.bookings.filter(b => b.date === ds && ps.includes(b.period));
+// 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は2人まで（config の capacity。依頼者指定）
+const SHARED = ["hw3", "kiken"];
+const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 2 : 1;
+// a限から始まる、一緒に受けられる教習（高速教習3時限・危険予測2時限）の組に入っている教習生
+// （その時限がその種類の同じ組の予約だけの時）。ほかの予約が混じっていれば null
+function groupAt(ds, a, type) {
+  const ps = span(a, type), list = S.bookings.filter(b => b.date === ds && ps.includes(b.period));
   if (!list.length) return [];
-  if (list.some(b => b.lessonType !== "hw3")) return null;
+  if (list.some(b => b.lessonType !== type)) return null;
   const toks = [...new Set(list.map(b => b.token))];
   const ok = toks.every(t => { const mine = list.filter(b => b.token === t).map(b => b.period).sort((x, y) => x - y); return sameSet(mine, ps); });
   return ok ? toks : null;
@@ -274,13 +276,13 @@ function evaluatePair(s, ds, a, type = "kiken") {
     ? `${spanText(a, type)}限の${L}は入れられません（${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみ）`
     : `${spanText(a, type)}限は休憩をはさむため、${L}は入れられません` };
   // 高速教習（3時限）は、同じ時限の組に3人まで一緒に入れる
-  const grp = type === "hw3" ? hw3GroupAt(ds, a) : null;
+  const grp = SHARED.includes(type) ? groupAt(ds, a, type) : null;
   const joining = !!(grp && grp.length);
-  if (joining && grp.includes(s.token)) return { ok: false, reason: "この高速教習にはすでに入っています" };
-  if (joining && grp.length >= HW3_CAP()) return { ok: false, reason: `この高速教習は満員です（${HW3_CAP()}人まで）` };
+  if (joining && grp.includes(s.token)) return { ok: false, reason: `この${L}にはすでに入っています` };
+  if (joining && grp.length >= CAP(type)) return { ok: false, reason: `この${L}は満員です（${CAP(type)}人まで）` };
   for (const q of ps) {
     if (!isFree(s.token, ds, q)) return { ok: false, reason: `${q}限が空いていません` };
-    if (!joining && bookAt(ds, q)) return { ok: false, reason: `${q}限はすでに予約が入っています${type === "hw3" ? "（高速教習（3時限）は、同じ時限の組にだけ一緒に入れます）" : ""}` };
+    if (!joining && bookAt(ds, q)) return { ok: false, reason: `${q}限はすでに予約が入っています${SHARED.includes(type) ? `（${L}は、同じ時限の組にだけ一緒に入れます）` : ""}` };
   }
   if (type === "kiken" && (s.kikenDone || pendingOf(s).some(b => b.lessonType === "kiken")))
     return { ok: false, reason: s.kikenDone ? `${L}は受講済みです` : `${L}はすでに予約が入っています` };
@@ -418,16 +420,16 @@ function render() {
         // 過ぎた日：予約の変更・取り消しはできない。押せるのは実施・欠席のチェックだけ（依頼者指定）
         const one = bs.length > 1 ? null : b;
         const act = bs.length > 1 ? `data-act="pastMulti" data-d="${d}" data-p="${p}"` : one ? `data-act="pastCheck" data-id="${one.id}"` : "disabled";
-        h += `${td}<button class="wc past ${bs.length ? "bk" : ""} ${one && acked(one) ? "ackd" : ""} ${one && one.status === "draft" ? "draft" : ""} ${one && one.result || ""}" ${act} aria-label="${lb}（過ぎた日）">${bs.length > 1 ? `${bs.length}人<small>高速</small>` : one ? `${esc(ST(one.token) ? shortName(ST(one.token)) : "?")}<small>${one.result === "done" ? "実施" : one.result === "absent" ? "欠席" : one.lessonType ? SHORT[one.lessonType] || PT(one.lessonType).label : ""}</small>` : ""}</button></td>`;
+        h += `${td}<button class="wc past ${bs.length ? "bk" : ""} ${one && acked(one) ? "ackd" : ""} ${one && one.status === "draft" ? "draft" : ""} ${one && one.result || ""}" ${act} aria-label="${lb}（過ぎた日）">${bs.length > 1 ? `${bs.length}人<small>${multiShort(bs)}</small>` : one ? `${esc(ST(one.token) ? shortName(ST(one.token)) : "?")}<small>${one.result === "done" ? "実施" : one.result === "absent" ? "欠席" : one.lessonType ? SHORT[one.lessonType] || PT(one.lessonType).label : ""}</small>` : ""}</button></td>`;
         return;
       }
       // 高速教習（3時限）に一緒に入れる人を選んでいる時は、その組の始まりの枠を光らせる
-      const joinEv = b && pk && S.ptype === "hw3" ? evaluatePair(pk, d, p, "hw3") : null;
+      const joinEv = b && pk && SHARED.includes(S.ptype) && b.lessonType === S.ptype ? evaluatePair(pk, d, p, S.ptype) : null;
       if (joinEv && joinEv.ok) {
-        h += `${td}<button class="wc cand hw" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="hw3" aria-label="${lb}から高速教習（3時限）に一緒に入れる">${spanText(p, "hw3")}<small>一緒に${joinEv.join + 1}/${HW3_CAP()}人</small></button></td>`;
+        h += `${td}<button class="wc cand ${S.ptype === "kiken" ? "kk" : "hw"}" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}" aria-label="${lb}から${PT(S.ptype).label}に一緒に入れる">${spanText(p, S.ptype)}<small>一緒に${joinEv.join + 1}/${CAP(S.ptype)}人</small></button></td>`;
       } else if (bs.length > 1) {
         const allAck = bs.every(acked);
-        h += `${td}<button class="wc bk ${allAck ? "ackd" : ""} ${bs.every(x => x.status === "draft") ? "draft" : ""}" data-act="bookedMulti" data-d="${d}" data-p="${p}" aria-label="${lb} 高速教習 ${bs.length}人">${bs.length}人<small>高速</small></button></td>`;
+        h += `${td}<button class="wc bk ${allAck ? "ackd" : ""} ${bs.every(x => x.status === "draft") ? "draft" : ""}" data-act="bookedMulti" data-d="${d}" data-p="${p}" aria-label="${lb} ${PT(bs[0].lessonType).label} ${bs.length}人">${bs.length}人<small>${multiShort(bs)}</small></button></td>`;
       } else if (b) {
         const s = ST(b.token);
         const gone = goneDraft(b);
@@ -510,8 +512,8 @@ function pairSheet(ds, p, start, seg, type) {
   h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}" data-t="${type}">${spanText(x, type)}限</button>`).join("")}</div>`;
   // その種類の番（危険予測は12時限目、高速教習は13時限目）が来ている教習生だけ
   const want = type === "kiken" ? "kiken" : "hwSolo";
-  const grp0 = type === "hw3" ? hw3GroupAt(ds, a) || [] : [];
-  if (grp0.length) h += `<div class="banner info">この時限の${L}には、すでに${grp0.map(t => esc(nm(ST(t)))).join("・")}が入っています（${HW3_CAP()}人まで一緒に入れます）。</div>`;
+  const grp0 = SHARED.includes(type) ? groupAt(ds, a, type) || [] : [];
+  if (grp0.length) h += `<div class="banner info">この時限の${L}には、すでに${grp0.map(t => esc(nm(ST(t)))).join("・")}が入っています（${CAP(type)}人まで一緒に入れます）。</div>`;
   const c = S.students.filter(s => !grp0.includes(s.token) && specialTypes(s).includes(want) && ps.every(q => isFree(s.token, ds, q)))
     .sort((x, y) => weekCount(x.token) - weekCount(y.token) || String(x.deadline || "9").localeCompare(String(y.deadline || "9")));
   h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${type === "kiken" ? `${KK().label}（${lessonsOf(2, "kikenNo")}時限目）` : `高速教習（${lessonsOf(2, "hwNo")}時限目から）`}の番で、${spanText(a, type)}限がすべて空いている教習生 ${c.length}人</div><div class="list">`;
@@ -525,14 +527,16 @@ function pairSheet(ds, p, start, seg, type) {
   if (!c.length) h += `<div class="hist"><div>入れられる教習生はいません。</div></div>`;
   sheet(h + `</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
 }
-// 高速教習（3時限）の予約に、ほかの教習生を一緒に入れるボタン（満員でない時）
-function hw3JoinBtn(b) {
-  if (!b || b.lessonType !== "hw3" || b.result) return "";
+// 高速教習（3時限）・危険予測の予約に、ほかの教習生を一緒に入れるボタン（満員でない時）
+function joinBtn(b) {
+  if (!b || !SHARED.includes(b.lessonType) || b.result || isPast(b.date)) return "";
   const a = Math.min(...S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period));
-  const grp = hw3GroupAt(b.date, a);
-  if (!grp || grp.length >= HW3_CAP()) return "";
-  return `<button class="btn primary full" data-act="hw3Join" data-d="${b.date}" data-p="${a}">この高速教習に一緒に入れる（あと${HW3_CAP() - grp.length}人）</button>`;
+  const grp = groupAt(b.date, a, b.lessonType);
+  if (!grp || grp.length >= CAP(b.lessonType)) return "";
+  return `<button class="btn primary full" data-act="groupJoin" data-d="${b.date}" data-p="${a}" data-t="${b.lessonType}">この${PT(b.lessonType).label}に一緒に入れる（あと${CAP(b.lessonType) - grp.length}人）</button>`;
 }
+// 何人かで入っている枠の短い表示（「高速」「危険」）
+const multiShort = bs => bs[0].lessonType === "kiken" ? SHORT.kiken || "危険" : "高速";
 const lessonsOf = (stage, k) => ((CFG.lessons || {})[stage] || {})[k] || "";
 
 // 学科の受講確認（config の gakkaCheck）：入れようとしている教習が、決まった時限目（第2段階の10・13時限目など）に当たる時に確認を出す
@@ -831,7 +835,7 @@ document.addEventListener("click", async e => {
         <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
       } else {
         sheet(`${head}<br><span style="font-size:13px;color:var(--muted)">${b.status === "draft" ? "まだ確定していません。" : "教習生に通知済みです。取り消すと自動で通知されます。"}</span></p>
-        <div class="list">${hw3JoinBtn(b)}<button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
+        <div class="list">${joinBtn(b)}<button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
       }
     }
     else if (a === "pastCheck") {
@@ -848,17 +852,17 @@ document.addEventListener("click", async e => {
     }
     else if (a === "pastMulti") {
       const bs = bookingsAt(t.dataset.d, +t.dataset.p);
-      sheet(`<h3>${label(t.dataset.d, +t.dataset.p)}　${PT("hw3").label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、実施・欠席のチェックができます。</p>
+      sheet(`<h3>${label(t.dataset.d, +t.dataset.p)}　${PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、実施・欠席のチェックができます。</p>
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="pastCheck" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.result === "done" ? "実施" : x.result === "absent" ? "欠席" : "チェック前"}</div></div></button>`; }).join("")}</div>
         <div class="list" style="margin-top:10px"><button class="btn full" data-act="close">閉じる</button></div>`);
     }
     else if (a === "bookedMulti") {
       const ds = t.dataset.d, p = +t.dataset.p, bs = bookingsAt(ds, p);
-      sheet(`<h3>${label(ds, p)}　${PT("hw3").label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
+      sheet(`<h3>${label(ds, p)}　${PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="booked" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.status === "draft" ? "未確定" : acked(x) ? "確認済" : "通知済み"}</div></div></button>`; }).join("")}</div>
-        <div class="list" style="margin-top:10px">${hw3JoinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
+        <div class="list" style="margin-top:10px">${joinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
     }
-    else if (a === "hw3Join") { slotSheet(t.dataset.d, +t.dataset.p, "hw3", +t.dataset.p); }
+    else if (a === "groupJoin") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t, +t.dataset.p); }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
     else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }
     else if (a === "confirm") { t.disabled = true; await confirmWeek(); }
