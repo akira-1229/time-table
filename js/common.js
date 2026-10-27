@@ -128,6 +128,59 @@ export function karimenExpiryOf(issued, months = CFG.karimenMonths || 6) {
   const e = d.getDate() > last ? new Date(y, m, last) : addDays(new Date(y, m, d.getDate()), -1);
   return dateStr(e);
 }
+// 日没が早い期間か（config の darkSeason。年をまたぐ指定もOK）
+export function inDarkSeason(ds) {
+  const k = ds.slice(5), { from, to } = CFG.darkSeason || {};
+  if (!from) return false;
+  return from <= to ? (k >= from && k <= to) : (k >= from || k <= to);
+}
+// その日の空き時限 ps で高速教習（3時限か単独高速2時限）を入れられる組があるか。日没の警告つきの組は「入れられる」扱い（強制で入れられるため）
+export function hwPossible(ds, ps) {
+  const has = set => set.every(p => ps.includes(p)), dark = inDarkSeason(ds), dk = CFG.darkSeason || {};
+  if ((CFG.highwaySets || []).some(has)) return true;
+  for (let a = 1; a < 10; a++) {
+    const set = [a, a + 1];
+    if ((CFG.hwSolo || {}).noPairAfter && CFG.hwSolo.noPairAfter.includes(a)) continue;
+    if (dark && (dk.hwSoloNo || []).some(x => x[0] === a && x[1] === a + 1)) continue;
+    if (has(set)) return true;
+  }
+  return false;
+}
+// 教習生の◯（{ "YYYY-MM": Set("日-時限") }）で、今日から何日間、高速教習を入れられないか。入れられる日が1年見つからなければ Infinity、◯が無ければ null
+// ◯を登録した月はその◯で、その先は登録した最後の月の曜日ごとの◯で見積もる
+export function hwWaitDays(avail, from = today()) {
+  const months = Object.keys(avail).filter(k => avail[k] && avail[k].size).sort();
+  if (!months.length) return null;
+  const last = months[months.length - 1], pat = {}, byDay = {};
+  Object.keys(avail).forEach(ym => (avail[ym] ? [...avail[ym]] : []).forEach(k => {
+    const [d, p] = k.split("-").map(Number), ds = `${ym}-${pad(d)}`;
+    (byDay[ds] = byDay[ds] || []).push(p);
+    if (ym === last) { const w = parseDate(ds).getDay(); (pat[w] = pat[w] || new Set()).add(p); }
+  }));
+  for (let i = 0; i <= 366; i++) {
+    const d = addDays(from, i), ds = dateStr(d), ym = ds.slice(0, 7);
+    const ps = ym <= last ? byDay[ds] || [] : [...(pat[d.getDay()] || [])];
+    if (ps.length && hwPossible(ds, ps)) return i;
+  }
+  return Infinity;
+}
+// このペースで期限に間に合うか（技能開始日（空なら教習開始日）から paceMinDays 日以上たった人）。
+// これまでの1日あたりの時限数で残りを割って見込みの日を出し、教習期限（第2段階は仮免期限も）より後なら返す
+export function paceOf(st, on = today()) {
+  const start = st.skillStart || st.startDate;
+  if (!start) return null;
+  const days = Math.round((on - parseDate(start)) / 864e5);
+  if (days < (CFG.paceMinDays || 30)) return null;
+  const min1 = lessonMin(1, st), min2 = lessonMin(2, st), done = doneOf(st);
+  const remain = st.stage === 1 ? Math.max(0, min1 - done) + min2 : Math.max(0, min2 - done);
+  if (!remain) return null;
+  const rate = (st.stage === 1 ? done : min1 + done) / days;
+  const eta = rate > 0 ? dateStr(addDays(on, Math.ceil(remain / rate))) : null;
+  const lim = [["教習期限", st.deadline], ...(st.stage === 2 ? [["仮免期限", st.karimenExpiry]] : [])].filter(x => x[1]).sort((a, b) => a[1].localeCompare(b[1]));
+  const over = lim.find(([, d]) => !eta || eta > d);
+  return over ? { eta, remain, label: over[0], date: over[1] } : null;
+}
+export const paceText = pc => `このペースでは${pc.label}（${md(pc.date)}）に間に合いません（${pc.eta ? `見込み ${md(pc.eta)}` : "まだ受講がありません"}・残り${pc.remain}時限）`;
 // 教習期限・仮免期限が近い（または過ぎた）もの。days：あと何日（マイナスは過ぎた日数）
 export function expiriesOf(st, within = CFG.expiryWarnDays || 30) {
   const t = today(), out = [];

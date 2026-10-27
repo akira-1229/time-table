@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -72,6 +72,7 @@ function staffItems() {
   if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
   S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
     .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}:${e.date}`, noticeRow("期限", `${nsName(s)}<small>${e.label} ${mdS(e.date)}（${e.days < 0 ? `${-e.days}日過ぎ` : e.days === 0 ? "今日" : `あと${e.days}日`}）</small>`, "warn")]));
+  S.students.map(s => [s, paceOf(s)]).filter(([, pc]) => pc).forEach(([s, pc]) => items.push([`pace:${s.token}:${pc.label}`, noticeRow("ペース", `${nsName(s)}<small>${pc.label}に間に合わない見込み${pc.eta ? `（${mdS(pc.eta)}）` : ""}</small>`, "warn")]));
   S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push([`ng:${s.token}:${pl.reason}`, noticeRow("順番のずれ", `${nsName(s)}<small>${esc(pl.reason)}</small>`, "warn")]));
   const gones = S.bookings.filter(goneDraft);
   if (gones.length) items.push([`gone:${gones.map(b => b.id).join(",")}`, noticeRow("◯の取り消し", `未確定の予約から◯が外されました ${gones.length}件`, "warn")]);
@@ -203,6 +204,15 @@ function groupAt(ds, a, type) {
 }
 // キャンセル希望を、危険予測・高速教習の組ごとに1件にまとめる
 const cancelReqGroups = () => S.cancelReqs.filter((b, i, a) => !b.pairId || a.findIndex(x => x.pairId === b.pairId && x.token === b.token) === i);
+// 実施にしようとしている教習が、危険予測（12時限目）・高速教習（13時限目から）の順番に合っているか。合っていなければ理由を返す
+function orderNg(s, it) {
+  const K = lessonsOf(s.stage, "kikenNo"), H = lessonsOf(s.stage, "hwNo"), on = n => n && it.no <= n && n < it.no + it.units;
+  if (it.lessonType === "kiken" && !s.kikenDone && it.no !== K) return `${KK().label}は${K}時限目の教習ですが、今は${it.no}時限目になっています（欠席などで順番がずれています）`;
+  if (isHwType(it.lessonType) && !s.hwDone && it.no !== H) return `高速教習は${H}時限目からの教習ですが、今は${it.no}時限目になっています（欠席などで順番がずれています）`;
+  if (!it.lessonType && !s.kikenDone && on(K)) return `${K}時限目は${KK().label}ですが、通常の教習になっています`;
+  if (!it.lessonType && !s.hwDone && on(H)) return `${H}時限目は高速教習ですが、通常の教習になっています`;
+  return "";
+}
 // 終わった教習（実施・欠席のチェック待ち）。危険予測・高速教習は組の最後の時限まで終わってから出す（途中でチェックして組が割れないように）
 const uncheckedItems = () => lessonItems(S.pending.filter(b => b.status === "confirmed")).filter(it => it.bookings.every(b => bookingEnd(b) <= new Date()));
 const weekCount = tok => S.bookings.filter(b => b.token === tok).length;
@@ -222,8 +232,18 @@ const inDarkSeason = ds => {
 //   ok:false … 入れられない（reason に理由）
 // 連続3時限は高速教習（3時限）だけ。高速教習・危険予測・単独高速は evaluatePair で判定する
 const linkedP = (x, y) => y === x + 1 && !(CFG.breakAfter || []).includes(x);   // 休みをはさまずに続いているか
+// 教習期限・仮免期限（第2段階）を過ぎた日と、第1段階で技能開始日（空なら教習開始日）より前の日は入れない（依頼者指定）
+// 第2段階は、検定の前に予約を入れておくことがあるため、仮免交付日より前でも入れられる
+function dateBlock(s, ds) {
+  if (s.deadline && ds > s.deadline) return `教習期限（${md(s.deadline)}）を過ぎています`;
+  if (s.stage === 2 && s.karimenExpiry && ds > s.karimenExpiry) return `仮免期限（${md(s.karimenExpiry)}）を過ぎています`;
+  const st = s.skillStart || s.startDate;
+  if (s.stage === 1 && st && ds < st) return `${s.skillStart ? "技能開始日" : "教習開始日"}（${md(st)}）より前です`;
+  return "";
+}
 function evaluate(s, ds, p) {
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
+  { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
   if (bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
   if (dayCount(s.token, ds) >= dayMax(s)) return { ok: false, reason: `この日は上限の${dayMax(s)}時限まで入っています` };
@@ -273,6 +293,7 @@ function isCombo(list) {
 function evaluatePair(s, ds, a, type = "kiken") {
   const L = PT(type).label, ps = span(a, type);
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
+  { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
   if (!hasSpecial(s)) return { ok: false, reason: `第${s.stage}段階には${L}はありません` };
   if (!pairOk(a, type)) return { ok: false, reason: type === "hw3"
     ? `${spanText(a, type)}限の${L}は入れられません（${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみ）`
@@ -371,6 +392,8 @@ function render() {
   if (kt.length) h += `<div class="banner ok"><b>本日、検定日の方</b><ul style="margin:6px 0 0;padding-left:1.4em">${kt.map(s => `<li>${esc(nm(s))}（第${[1, 2].find(n => s[`mikiwame${n}`] && s[`mikiwame${n}`].kenteiDate === dateStr(today()))}段階）</li>`).join("")}</ul></div>`;
   const exp = S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days);
   if (exp.length) h += `<div class="banner warn"><b>期限が近い教習生がいます（${CFG.expiryWarnDays || 30}日以内）</b>${exp.map(([s, e]) => `<br>${esc(nm(s))}：<span style="${e.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${esc(expiryText(e))}</span>`).join("")}</div>`;
+  const slow = S.students.map(s => [s, paceOf(s)]).filter(([, pc]) => pc);
+  if (slow.length) h += `<div class="banner warn"><b>このペースでは期限に間に合わない教習生がいます</b>${slow.map(([s, pc]) => `<br>${esc(nm(s))}：${esc(paceText(pc))}`).join("")}<br><span style="font-size:12px">これまでの1日あたりの時限数から見込みを出しています。空き時間を増やしてもらうなど、早めに相談してください。</span></div>`;
   const ngs = S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok);
   if (ngs.length) h += `<div class="banner warn"><b>教習の順番がずれています</b>${ngs.map(([s, pl]) => `<br>${esc(nm(s))}：${esc(pl.reason)}`).join("")}<br><span style="font-size:12px">欠席などで順番がずれた時に出ます。予約を入れ直してください。</span></div>`;
   const gones = S.bookings.filter(goneDraft);
@@ -876,6 +899,9 @@ document.addEventListener("click", async e => {
       if (a === "markAbsent" && !confirm("欠席として記録し、教習生に通知します。よろしいですか？")) return;
       if (a === "markDone") {
         const s = ST(S.pending.find(b => b.id === ids[0])?.token), it = s && planOf(s).items.find(x => x.bookings.some(b => b.id === ids[0]));
+        // 欠席などで危険予測・高速教習の順番がずれたままなら、実施にする前に警告する（依頼者指定）
+        const ng = s && it && orderNg(s, it);
+        if (ng && !confirm(`${nm(s)}の教習の順番がずれています。\n${ng}\n\nこのまま実施にしますか？`)) return;
         if (it && isMikiwame(s, it)) return mikiwameSheet(s, it, ids);
       }
       t.disabled = true; closeSheet(); await markResult(ids, a === "markDone" ? "done" : "absent");

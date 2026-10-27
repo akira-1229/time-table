@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
+  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -167,6 +167,18 @@ document.addEventListener("pref:change", () => { if (S.student) render(); });
 const stopped = () => S.student && S.student.active === false;
 const STOP_MSG = "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
 const stopSheet = () => sheet(`<h3>◯を付けられません</h3><p style="font-size:16px">${STOP_MSG}</p><div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
+// 第2段階で高速教習がまだの人：付けた◯では高速教習をしばらく（hwWaitWarnDays 日以上）入れられない時に知らせる
+// （夜だけの人は、日没が早い期間に高速教習が入らないため。依頼者指定の文言。開いている間に1回だけ）
+function hwCheck() {
+  const st = S.student;
+  if (S.hwWarned || st.stage !== 2 || st.hwDone || S.bookings.some(b => b.status === "confirmed" && !b.result && isHwType(b.lessonType))) return false;
+  const n = hwWaitDays(S.avail);
+  if (n === null || n < (CFG.hwWaitWarnDays || 14)) return false;
+  S.hwWarned = true;
+  sheet(`<h3>高速教習について</h3><p style="font-size:16px">${n === Infinity ? "この空き時間では高速教習を入れることができません" : `この空き時間では${n}日間高速教習を入れることができません`}　昼間に空き時間を作ってください</p>
+    <div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
+  return true;
+}
 const lockedNote = () => CFG.noRemoveAfterDeadline
   ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
   : "予約が入っていない枠は変更できます。";
@@ -336,13 +348,13 @@ document.addEventListener("click", async e => {
     } else {
       if (stopped()) return stopSheet();
       st.free.forEach(p => addSlot(ym, slotKey(d, p)));
-      closeSheet(); render(); scheduleSave(ym); toast(`${m}月${d}日の全ての時限に◯を付けました`);
+      closeSheet(); render(); scheduleSave(ym); if (!hwCheck()) toast(`${m}月${d}日の全ての時限に◯を付けました`);
     }
   }
   else if (a === "addOk") {
     if (stopped()) return stopSheet();
     const mi = +t.dataset.mi, { y, m } = MONTHS[mi], ym = ymOf(y, m), k = slotKey(+t.dataset.d, +t.dataset.p);
-    closeSheet(); addSlot(ym, k); render(); scheduleSave(ym);
+    closeSheet(); addSlot(ym, k); render(); scheduleSave(ym); hwCheck();
   }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
@@ -372,7 +384,7 @@ document.addEventListener("click", async e => {
       const w = new Date(nx.y, nx.m - 1, d).getDay();
       Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2) { addSlot(ym, slotKey(d, +p)); n++; } });
     }
-    render(); scheduleSave(ym); toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
+    render(); scheduleSave(ym); if (!(n && hwCheck())) toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
   }
   else if (a === "bulk" && stopped()) stopSheet();
   else if (a === "bulk") { S.bulkW = new Set(); S.bulkP = new Set(); bulkSheet(); }
@@ -384,7 +396,7 @@ document.addEventListener("click", async e => {
     for (let d = S.mi === 0 ? now.getDate() : 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
       const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { addSlot(ym, slotKey(d, p)); n++; }
     });
-    closeSheet(); render(); if (n) scheduleSave(ym); toast(n ? `${n}枠に◯を付けました` : "曜日と時限を選んでください");
+    closeSheet(); render(); if (n) scheduleSave(ym); if (!(n && hwCheck())) toast(n ? `${n}枠に◯を付けました` : "曜日と時限を選んでください");
   }
   else if (a === "locked") {
     const b = S.bookings.find(x => x.id === t.dataset.id);
