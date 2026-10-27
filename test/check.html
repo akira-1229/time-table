@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>画面の並べて確認</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css"><link rel="icon" href="icons/icon-192.png">
+<script src="js/config.js"></script>
+<style>
+  /* 指導員の画面と教習生の画面を並べて、片方の操作がもう片方にすぐ反映されるかを見るためのページ（Firebaseに切り替える前の、この端末の中だけで動いている間に使う） */
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; }
+  .dbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; }
+  .dbar b { margin-right: 4px; }
+  .dbar .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dbar a { color: var(--blue); font-weight: 700; margin-left: auto; }
+  .panes { flex: 1; display: grid; grid-template-columns: 3fr 2fr; min-height: 0; }
+  .pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .pane h2 { margin: 0; padding: 6px 12px; font-size: 13px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .pane iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+  .seg { display: none; }
+  @media (max-width: 899px) {
+    .panes { grid-template-columns: 1fr; }
+    .pane { border-right: 0; }
+    .pane[hidden] { display: none; }
+    .seg { display: flex; }
+    .pane h2 { display: none; }
+  }
+</style></head>
+<body>
+<div id="bar" class="dbar"></div>
+<div class="panes">
+  <section class="pane" id="pi"><h2>指導員の画面</h2><iframe id="fi" title="指導員の画面" src="instructor.html"></iframe></section>
+  <section class="pane" id="ps"><h2 id="sh">教習生の画面</h2><iframe id="fs" title="教習生の画面"></iframe></section>
+</div>
+<script type="module">
+import { DEMO, DEMO_USERS, DEMO_STUDENTS, esc } from "./js/common.js";
+const bar = document.getElementById("bar");
+if (!DEMO) {
+  document.body.innerHTML = `<div class="wrap"><div class="err">このページは、Firebaseに切り替える前の確認用です。</div></div>`;
+} else {
+  const ins = Object.fromEntries(Object.values(DEMO_USERS).map(u => [u.uid, u.name]));
+  const login = uid => Object.keys(DEMO_USERS).find(k => DEMO_USERS[k].uid === uid);
+  const S = { tok: DEMO_STUDENTS[0].tok, pane: "i" };
+  function draw() {
+    bar.innerHTML = `<div class="seg" role="group" aria-label="表示する画面"><button aria-pressed="${S.pane === "i"}" data-pane="i">指導員</button><button aria-pressed="${S.pane === "s"}" data-pane="s">教習生</button></div>
+      <b>教習生</b><div class="chips">${DEMO_STUDENTS.map(s => `<button class="chip" aria-pressed="${S.tok === s.tok}" data-tok="${s.tok}">${esc(s.name)}（${esc(ins[s.instructorUid])}）</button>`).join("")}</div>
+      <span style="color:var(--muted)">指導員のログイン：${Object.values(DEMO_USERS).filter(u => u.uid !== "DEMO_ADMIN").map(u => `<b>${login(u.uid)}</b>`).join(" / ")}</span>
+      <a href="index.html">入口へ</a>`;
+    const st = DEMO_STUDENTS.find(s => s.tok === S.tok);
+    document.getElementById("sh").textContent = `教習生の画面（${st.name}さん・${ins[st.instructorUid]}指導員の担当）`;
+    document.getElementById("pi").hidden = S.pane !== "i";
+    document.getElementById("ps").hidden = S.pane !== "s";
+  }
+  const fs = document.getElementById("fs");
+  const openStudent = () => { fs.src = `student.html?t=${encodeURIComponent(S.tok)}`; };
+  bar.addEventListener("click", e => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.tok) { S.tok = t.dataset.tok; openStudent(); }
+    if (t.dataset.pane) S.pane = t.dataset.pane;
+    draw();
+  });
+  draw(); openStudent();
+}
+</script></body></html>

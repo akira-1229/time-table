@@ -1,0 +1,42 @@
+// 画面が「読み込み中…」のまま止まった時の案内（古いブラウザでも動くように classic script・古い書き方で書く）
+// 画面のプログラムが読み込めない／途中で止まった時に、理由と対処を表示する
+(function () {
+  // 設定の「画面の明るさ」「文字の大きさ」を、画面を描く前に反映する（ちらつかないように）
+  try {
+    var th = localStorage.getItem("timetable_theme"), fs = localStorage.getItem("timetable_fontsize");
+    if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th);
+    if (fs === "large") document.documentElement.setAttribute("data-fs", "large");
+  } catch (e) { }
+  var errs = [];
+  self.__boot = [];                                          // どこまで進んだかの印（各画面のプログラムが足していく）
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    errs.push(t && t !== window && (t.src || t.href) ? "読み込み失敗: " + (t.src || t.href) : (e.message || "エラー"));
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) { errs.push(String(e.reason && e.reason.message || e.reason)); });
+  // 起動時の読み込み画面（回るロゴ）：画面が描けたら（#boot が消えたら）少し見せてから消す
+  var t0 = Date.now();
+  function hideSplash() {
+    var sp = document.getElementById("splash"); if (!sp) return;
+    sp.className = "hide"; setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 400);
+  }
+  (function poll() {
+    if (document.readyState !== "loading" && !document.getElementById("boot") && Date.now() - t0 >= 800) return hideSplash();
+    setTimeout(poll, 100);
+  })();
+  setTimeout(function () {
+    if (!document.getElementById("boot")) return;            // 画面が描けていれば何もしない
+    hideSplash();
+    var ua = navigator.userAgent, inApp = /Line\/|FBAN|FBAV|Instagram|MicroMessenger|KAKAOTALK|YJApp|; wv\)/i.test(ua);
+    var ext = location.href + (location.search ? "&" : "?") + "openExternalBrowser=1";
+    var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+    var h = '<section class="panel"><div class="body"><h2 style="margin-top:0">画面を開けませんでした</h2>'
+      + (inApp ? '<p>アプリの中のブラウザ（LINEなど）で開いています。<b>Safari か Chrome で開き直して</b>ください。</p>'
+        + '<p><a class="btn accent full" href="' + esc(ext) + '">ブラウザで開き直す</a></p>'
+        : '<p>電波の良い所で「もう一度読み込む」を押してください。直らない時は、スマホのOS（iOS・Android）とブラウザを最新にしてください。</p>')
+      + '<p><button class="btn full" onclick="location.reload()">もう一度読み込む</button></p>'
+      + '<details><summary>くわしい情報（事務所に伝える用）</summary><pre style="white-space:pre-wrap;font-size:12px">'
+      + esc((errs.length ? errs.join("\n") : "エラー表示なし（時間切れ）") + "\n進み具合: " + (self.__boot.join(" → ") || "なし") + "\n" + ua) + '</pre></details></div></section>';
+    var app = document.getElementById("app"); if (app) app.innerHTML = h;
+  }, 15000);
+})();

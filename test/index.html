@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>空き時間登録システム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css"><link rel="icon" href="icons/icon-192.png">
+<script src="js/config.js"></script>
+<script src="js/boot.js"></script></head>
+<body><div id="splash" role="status" aria-label="読み込み中"><div class="sp-stage"><div class="sp-logo"><img src="img/logo.png" alt="" class="" style="--z:-2.0px"><img src="img/logo.png" alt="" class="edge" style="--z:-1.5px"><img src="img/logo.png" alt="" class="edge" style="--z:-1.0px"><img src="img/logo.png" alt="" class="edge" style="--z:-0.5px"><img src="img/logo.png" alt="" class="edge" style="--z:0.0px"><img src="img/logo.png" alt="" class="edge" style="--z:0.5px"><img src="img/logo.png" alt="" class="edge" style="--z:1.0px"><img src="img/logo.png" alt="" class="edge" style="--z:1.5px"><img src="img/logo.png" alt="" class="" style="--z:2.0px"></div></div></div><script src="js/season.js"></script>
+<div class="wrap"><div id="app"><div id="boot"></div></div></div>
+<script type="module">
+import { DEMO, CFG, esc } from "./js/common.js";
+import { resetDemo } from "./js/backend.js";
+const app = document.getElementById("app");
+let h = `<section class="panel"><div class="body"><h2 style="margin-top:0">空き時間登録システム</h2>
+<p>教習生の方は、学園で受け取ったQRコードから開いてください。</p>
+<div class="list"><a class="btn accent full center" style="text-decoration:none" href="instructor.html">指導員の画面</a>
+<a class="btn full center" style="text-decoration:none" href="admin.html">管理画面（管理者用）</a></div><p class="center" style="font-size:14px;margin:12px 0 0">使い方：<a href="guide-instructor.html">指導員用</a>・<a href="guide-student.html">教習生用</a></p></div></section>`;
+if (DEMO) {
+  // Firebaseに切り替える前（データはこの端末の中だけ）の間だけ出す
+  h += `<p class="center" style="font-size:13px"><a href="check.html">指導員と教習生の画面を並べて確認する</a></p>
+  <p class="center"><button class="linkbtn" id="reset" style="font-size:13px;color:var(--muted)">データを最初の状態に戻す</button></p>`;
+}
+app.innerHTML = h;
+const r = document.getElementById("reset");
+if (r) r.onclick = () => { if (confirm("この端末のデータを最初の状態に戻します。よろしいですか？")) { resetDemo(); localStorage.removeItem("timetable_t"); alert("初期化しました"); } };
+</script></body></html>
