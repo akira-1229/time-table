@@ -264,8 +264,8 @@ function editSheet(s) {
   const opt = (v, cur, t = v) => `<option value="${esc(v)}" ${String(cur ?? "") === String(v) ? "selected" : ""}>${esc(t)}</option>`;
   sheet(`<h3>${isNew ? "教習生を追加" : "教習生を編集"}</h3>
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
-  <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田 太郎"></div>
-  <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ タロウ"></div></div>
+  <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田"><span style="font-size:12px;color:var(--lv3);font-weight:700">教習生の名前は名字だけにしてください</span></div>
+  <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ"></div></div>
   <div class="row"><div class="field"><label for="f_no">教習生番号</label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off" inputmode="numeric" maxlength="4" placeholder="数字4桁（例：0123）"></div>
   ${S.isAdmin ? `<div class="field"><label for="f_in">担当指導員<span style="color:var(--lv3)">＊必須</span></label><select id="f_in">${opt("", s.instructorUid || (S.isInst ? S.uid : ""), "選んでください")}${S.instructors.map(i => opt(i.uid, s.instructorUid || (S.isInst ? S.uid : ""), i.name)).join("")}</select></div>` : "<div></div>"}</div>
   <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
@@ -425,6 +425,9 @@ document.addEventListener("click", async e => {
       DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
       if (data.studentNo && !/^\d{4}$/.test(data.studentNo)) return toast("教習生番号は数字4桁で入れてください（例：0123）");
       if (!data.name) return toast("名前（漢字）を入れてください");
+      // 名前は名字だけ（依頼者指定）。空白があれば名前まで入っているとみなす
+      if (/\s/.test(data.name)) return toast("教習生の名前は名字だけにしてください");
+      if (/\s/.test(data.nameKana)) return toast("フリガナも名字だけにしてください");
       if (!data.nameKana) return toast("フリガナを入れてください");
       if (!data.instructorUid) return toast("担当指導員を選んでください");
       if (!isKatakana(data.nameKana)) return toast("フリガナはカタカナで入れてください（ひらがなは自動でカタカナになります）");
