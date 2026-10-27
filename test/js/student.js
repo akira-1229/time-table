@@ -3,10 +3,10 @@ import {
   doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where, getDocs, serverTimestamp, onSnapshot
 } from "./backend.js";
 import {
-  CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
+  CFG, db, WD, P, ymOf, dateStr, parseDate, addDays, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
+  inputDeadlineOf, pastInputDeadline, offDeadlineOf, offLocked, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -40,7 +40,7 @@ async function load() {
     }
     const bq = query(collection(db, "students", T, "bookings"), where("status", "in", ["confirmed", "cancelled"]));
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
-    S.mi = nextMonthFilled() ? 0 : 1;
+    S.mi = nextMonthFilled() || !offLocked(ymOf(MONTHS[1].y, MONTHS[1].m)) ? 0 : 1;
     render();
     if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T, S.student.instructorUid); }
   } catch (e) { fail(friendlyError(e)); }
@@ -192,6 +192,12 @@ const lockedNote = () => CFG.noRemoveAfterDeadline
 function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   let h = "";
+  // 次の月は、指導員の予定（✕）の締切の翌日から付けられる（先に指導員の予定が決まるように）
+  if (!offLocked(ym)) {
+    const od = addDays(parseDate(offDeadlineOf(ym)), 1);
+    return `<div class="banner info"><b>${m}月分の空き時間は、${od.getMonth() + 1}月${od.getDate()}日から入力できます。</b><br>先に指導員の予定が決まり、教習がない時間は✕で表示されます。</div>
+      <div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
+  }
   const filled = set.size > 0, open = !pastDeadline(ym);
   if (stopped()) h += `<div class="banner ${S.student.graduatedOn ? "ok" : "warn"}">${stopMsg()}</div>`;
   if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;

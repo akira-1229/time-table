@@ -7,14 +7,14 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, offDeadlineOf, offLocked, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
   uid: null, me: null, view: "assign", week: addDays(mondayOf(today()), getPref("startweek", "next") === "this" ? 0 : 7), mode: getPref("startmode", "slot"), balOpen: getPref("balopen", "0") === "1", pick: null, ptype: null,
-  off: {}, offMi: 1, offTimers: {}, students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
+  off: {}, offMi: null, offTimers: {}, students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
 };
 const wid = () => dateStr(S.week);
 const days = () => { const r = []; for (let i = 0; i < 7; i++) { const d = addDays(S.week, i); if (CFG.openDays.includes(d.getDay())) r.push(dateStr(d)); } return r; };
@@ -166,21 +166,25 @@ const offMonths = () => { const n = today(); return [0, 1, 2].map(i => { const d
 async function renderOff() {
   if (!S.me) return;
   const ms = offMonths(); await loadOff(ms.map(x => ymOf(x.y, x.m)));
-  const { y, m } = ms[S.offMi], ym = ymOf(y, m), set = S.off[ym], t0 = today();
+  // 最初は、締切がまだ来ていない一番近い月を開く
+  if (S.offMi === null) { const i = ms.findIndex(x => !offLocked(ymOf(x.y, x.m))); S.offMi = i < 0 ? ms.length - 1 : i; }
+  const { y, m } = ms[S.offMi], ym = ymOf(y, m), set = S.off[ym], t0 = today(), lock = offLocked(ym), dl0 = offDeadlineOf(ym);
   const start = y === t0.getFullYear() && m === t0.getMonth() + 1 ? t0.getDate() : 1;
   const dl = []; for (let d = start; d <= new Date(y, m, 0).getDate(); d++) dl.push(d);
   let h = `<div class="topbar"><div><h1>予定の登録</h1><small>${esc(S.me.name)} 指導員</small></div></div>
   <section class="panel"><div class="body">
   <div class="banner info">休みの日や、ほかの予定があって<b>教習に出られない時間に✕</b>を付けてください。押すとすぐに✕が付き、もう一度押すと外れます。日付の下の「全部」で、その日の全部の時限に✕を付けられます。<br><span style="font-size:12px">✕を付けた時間は、教習生の画面にも✕で出て◯を付けられなくなり、予約も入りません。教習生が空き時間を入れる前に登録してください。</span></div>
+  ${lock ? `<div class="banner warn"><b>${m}月分は締切（${md(dl0)}）を過ぎているため、変更できません。</b><br><span style="font-size:12px">教習生が◯を付け始めているためです。</span></div>`
+    : `<div class="banner ${set.size ? "ok" : "warn"}"><b>${m}月分の締切は${md(dl0)}です。</b>${set.size ? "締切までは何度でも変更できます。" : ""}<br><span style="font-size:12px">締切の翌日から、教習生が${m}月分の◯を付け始めます。</span></div>`}
   <div class="months">${ms.map((x, i) => `<button class="chip" aria-pressed="${S.offMi === i}" data-act="offMonth" data-v="${i}">${x.m}月</button>`).join("")}</div>
   <div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
-  dl.forEach(d => { const all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(p => set.has(slotKey(d, p))); h += `<td><input type="checkbox" class="daychk" data-act="offDay" data-d="${d}" ${all ? "checked" : ""} aria-label="${m}月${d}日の全部の時限に✕"></td>`; });
+  dl.forEach(d => { const all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(p => set.has(slotKey(d, p))); h += `<td><input type="checkbox" class="daychk" ${lock ? "disabled" : `data-act="offDay"`} data-d="${d}" ${all ? "checked" : ""} aria-label="${m}月${d}日の全部の時限に✕"></td>`; });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th scope="row" class="pl">${p}限<small>${P[p][0]}</small></th>`;
-    dl.forEach(d => { const x = set.has(slotKey(d, p)); h += `<td><button class="cell ${x ? "ng" : ""}" data-act="offCell" data-d="${d}" data-p="${p}" aria-pressed="${x}" aria-label="${m}月${d}日 ${p}限${x ? " 教習に出られない" : ""}">${x ? "✕" : ""}</button></td>`; });
+    dl.forEach(d => { const x = set.has(slotKey(d, p)); h += `<td><button class="cell ${x ? "ng" : ""}" ${lock ? "disabled" : `data-act="offCell"`} data-d="${d}" data-p="${p}" aria-pressed="${x}" aria-label="${m}月${d}日 ${p}限${x ? " 教習に出られない" : ""}">${x ? "✕" : ""}</button></td>`; });
     h += `</tr>`;
   }
   h += `</tbody></table></div>
@@ -1004,6 +1008,7 @@ document.addEventListener("click", async e => {
     else if (a === "offCell" || a === "offDay") {
       // 確認なしで、押すたびに✕を付ける／外す（依頼者指定）。「全部」は、全部✕ならすべて外し、そうでなければすべて✕
       const { y, m } = offMonths()[S.offMi], ym = ymOf(y, m), set = S.off[ym], d = +t.dataset.d;
+      if (offLocked(ym)) return toast("締切を過ぎているため変更できません");
       if (a === "offCell") { const k = slotKey(d, +t.dataset.p); set.has(k) ? set.delete(k) : set.add(k); }
       else { const ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(p => slotKey(d, p)), all = ks.every(k => set.has(k)); ks.forEach(k => all ? set.delete(k) : set.add(k)); }
       const sx = window.scrollX, wrap = document.querySelector("#off .calwrap"), sl = wrap ? wrap.scrollLeft : 0;
