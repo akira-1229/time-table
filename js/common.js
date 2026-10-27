@@ -157,10 +157,13 @@ export function hwWaitDays(avail, from = today()) {
     (byDay[ds] = byDay[ds] || []).push(p);
     if (ym === last) { const w = parseDate(ds).getDay(); (pat[w] = pat[w] || new Set()).add(p); }
   }));
+  // ◯の日はあるのに高速教習が入らない（夜だけなど、時間帯のせい）時だけ数える。◯の日そのものが少ないだけなら 0（案内しない）
+  let unusable = false;
   for (let i = 0; i <= 366; i++) {
     const d = addDays(from, i), ds = dateStr(d), ym = ds.slice(0, 7);
     const ps = ym <= last ? byDay[ds] || [] : [...(pat[d.getDay()] || [])];
-    if (ps.length && hwPossible(ds, ps)) return i;
+    if (ps.length && hwPossible(ds, ps)) return unusable ? i : 0;
+    if (ps.length) unusable = true;
   }
   return Infinity;
 }
