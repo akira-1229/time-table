@@ -103,12 +103,6 @@ export function inputDeadlineOf(st, ym) {
   const last = daysIn(yy, mm), d = v === "pe" ? last : Math.min(last, Math.max(1, +v.slice(1) || CFG.deadlineDay));
   return `${yy}-${pad(mm)}-${pad(d)}`;
 }
-// 指導員の予定（✕）の締切：その月の前の月の offDeadlineDay 日。教習生はこの翌日から、その月の◯を付けられる
-export function offDeadlineOf(ym) {
-  const [y, m] = ym.split("-").map(Number), [yy, mm] = m === 1 ? [y - 1, 12] : [y, m - 1];
-  return `${yy}-${pad(mm)}-${pad(Math.min(daysIn(yy, mm), CFG.offDeadlineDay || 10))}`;
-}
-export const offLocked = (ym, on = dateStr(today())) => on > offDeadlineOf(ym);
 export const pastInputDeadline = (st, ym, on = dateStr(today())) => on > inputDeadlineOf(st, ym);
 export function inputDeadlineText(st) {
   const v = (st && st.inputDeadline) || "";

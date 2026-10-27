@@ -7,14 +7,14 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, offDeadlineOf, offLocked, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
   uid: null, me: null, view: "assign", week: addDays(mondayOf(today()), getPref("startweek", "next") === "this" ? 0 : 7), mode: getPref("startmode", "slot"), balOpen: getPref("balopen", "0") === "1", pick: null, ptype: null,
-  off: {}, offMi: null, offTimers: {}, students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
+  off: {}, offWeek: addDays(mondayOf(today()), 7), offTimers: {}, students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
 };
 const wid = () => dateStr(S.week);
 const days = () => { const r = []; for (let i = 0; i < 7; i++) { const d = addDays(S.week, i); if (CFG.openDays.includes(d.getDay())) r.push(dateStr(d)); } return r; };
@@ -161,34 +161,31 @@ function saveOff(ym) {
     catch (e) { toast(friendlyError(e)); }
   }, 600);
 }
-// 予定を登録する月：今月・来月・再来月（教習生が来月分を入れる前に、指導員が先に入れておく）
-const offMonths = () => { const n = today(); return [0, 1, 2].map(i => { const d = new Date(n.getFullYear(), n.getMonth() + i, 1); return { y: d.getFullYear(), m: d.getMonth() + 1 }; }); };
+// 予定の登録は週ごと（毎週水曜日に、来週の出られない時間に✕を付けてから自動で割り振る。依頼者指定）。最初は来週
+const offDays = () => Array.from({ length: 7 }, (_, i) => dateStr(addDays(S.offWeek, i)));
 async function renderOff() {
   if (!S.me) return;
-  const ms = offMonths(); await loadOff(ms.map(x => ymOf(x.y, x.m)));
-  // 最初は、締切がまだ来ていない一番近い月を開く
-  if (S.offMi === null) { const i = ms.findIndex(x => !offLocked(ymOf(x.y, x.m))); S.offMi = i < 0 ? ms.length - 1 : i; }
-  const { y, m } = ms[S.offMi], ym = ymOf(y, m), set = S.off[ym], t0 = today(), lock = offLocked(ym), dl0 = offDeadlineOf(ym);
-  const start = y === t0.getFullYear() && m === t0.getMonth() + 1 ? t0.getDate() : 1;
-  const dl = []; for (let d = start; d <= new Date(y, m, 0).getDate(); d++) dl.push(d);
+  const ds = offDays(), tds = dateStr(today());
+  await loadOff([...new Set(ds.map(d => d.slice(0, 7)))]);
+  const n = ds.reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(p => isOff(d, p)).length, 0);
   let h = `<div class="topbar"><div><h1>予定の登録</h1><small>${esc(S.me.name)} 指導員</small></div></div>
   <section class="panel"><div class="body">
-  <div class="banner info">休みの日や、ほかの予定があって<b>教習に出られない時間に✕</b>を付けてください。押すとすぐに✕が付き、もう一度押すと外れます。日付の下の「全部」で、その日の全部の時限に✕を付けられます。<br><span style="font-size:12px">✕を付けた時間は、教習生の画面にも✕で出て◯を付けられなくなり、予約も入りません。教習生が空き時間を入れる前に登録してください。</span></div>
-  ${lock ? `<div class="banner warn"><b>${m}月分は締切（${md(dl0)}）を過ぎているため、変更できません。</b><br><span style="font-size:12px">教習生が◯を付け始めているためです。</span></div>`
-    : `<div class="banner ${set.size ? "ok" : "warn"}"><b>${m}月分の締切は${md(dl0)}です。</b>${set.size ? "締切までは何度でも変更できます。" : ""}<br><span style="font-size:12px">締切の翌日から、教習生が${m}月分の◯を付け始めます。</span></div>`}
-  <div class="months">${ms.map((x, i) => `<button class="chip" aria-pressed="${S.offMi === i}" data-act="offMonth" data-v="${i}">${x.m}月</button>`).join("")}</div>
-  <div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
-  dl.forEach(d => { const w = new Date(y, m - 1, d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${d}<small>${WD[w]}</small></th>`; });
+  <div class="banner info"><b>毎週水曜日に、来週の予定を入れてください。</b><br>休みの日や、ほかの予定があって<b>教習に出られない時間に✕</b>を付けます。押すとすぐに✕が付き、もう一度押すと外れます。日付の下の「全部」で、その日の全部の時限に✕を付けられます。<br><span style="font-size:12px">✕を付けた時間には予約が入りません（手で入れる時も、自動で割り振る時も）。教習生の画面には出ません。</span></div>
+  <div class="weeknav"><button class="btn" data-act="offWk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(ds[6])}</b><button class="btn" data-act="offWk" data-v="7" aria-label="次の週">▶</button></div>
+  <div class="gridwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
+  ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}${d === tds ? " tday t1" : ""}">${parseDate(d).getDate()}<small>${d === tds ? "今日" : WD[w]}</small></th>`; });
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
-  dl.forEach(d => { const all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(p => set.has(slotKey(d, p))); h += `<td><input type="checkbox" class="daychk" ${lock ? "disabled" : `data-act="offDay"`} data-d="${d}" ${all ? "checked" : ""} aria-label="${m}月${d}日の全部の時限に✕"></td>`; });
+  ds.forEach(d => { const past = d < tds, all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(p => isOff(d, p)); h += `<td class="${d === tds ? "tday" : ""}"><input type="checkbox" class="daychk" ${past ? "disabled" : `data-act="offDay" data-d="${d}"`} ${all ? "checked" : ""} aria-label="${md(d)}の全部の時限に✕"></td>`; });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th scope="row" class="pl">${p}限<small>${P[p][0]}</small></th>`;
-    dl.forEach(d => { const x = set.has(slotKey(d, p)); h += `<td><button class="cell ${x ? "ng" : ""}" ${lock ? "disabled" : `data-act="offCell"`} data-d="${d}" data-p="${p}" aria-pressed="${x}" aria-label="${m}月${d}日 ${p}限${x ? " 教習に出られない" : ""}">${x ? "✕" : ""}</button></td>`; });
+    ds.forEach(d => { const x = isOff(d, p), past = d < tds; h += `<td class="${d === tds ? `tday${p === 10 ? " tN" : ""}` : ""}"><button class="cell ${x ? "ng" : ""}" ${past ? "disabled" : `data-act="offCell" data-d="${d}" data-p="${p}"`} aria-pressed="${x}" aria-label="${md(d)} ${p}限${x ? " 教習に出られない" : ""}">${x ? "✕" : ""}</button></td>`; });
     h += `</tr>`;
   }
   h += `</tbody></table></div>
-  <div class="legend"><span><i class="sw" style="background:var(--lv3-soft);border-color:var(--lv3)"></i>教習に出られない（✕）</span><span><i class="sw"></i>教習に出られる</span></div></div></section>`;
+  <div class="legend"><span><i class="sw" style="background:var(--lv3-soft);border-color:var(--lv3)"></i>教習に出られない（✕）</span><span><i class="sw"></i>教習に出られる</span></div>
+  <p style="font-size:13px;margin:10px 0 6px">この週の✕：<b>${n}</b>時限</p>
+  <button class="btn primary full" data-act="offToAssign">この週の予約の管理へ（自動で割り振る）</button></div></section>`;
   document.getElementById("off").innerHTML = h;
 }
 function watchAvail(yms) {
@@ -1004,16 +1001,21 @@ document.addEventListener("click", async e => {
     else if (a === "groupJoin") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t, +t.dataset.p); }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
     else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }
-    else if (a === "offMonth") { S.offMi = +t.dataset.v; await renderOff(); }
+    else if (a === "offWk") { S.offWeek = addDays(S.offWeek, +t.dataset.v); await renderOff(); }
     else if (a === "offCell" || a === "offDay") {
       // 確認なしで、押すたびに✕を付ける／外す（依頼者指定）。「全部」は、全部✕ならすべて外し、そうでなければすべて✕
-      const { y, m } = offMonths()[S.offMi], ym = ymOf(y, m), set = S.off[ym], d = +t.dataset.d;
-      if (offLocked(ym)) return toast("締切を過ぎているため変更できません");
+      const ds = t.dataset.d, ym = ds.slice(0, 7), set = S.off[ym], d = parseDate(ds).getDate();
+      if (ds < dateStr(today())) return;
       if (a === "offCell") { const k = slotKey(d, +t.dataset.p); set.has(k) ? set.delete(k) : set.add(k); }
       else { const ks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(p => slotKey(d, p)), all = ks.every(k => set.has(k)); ks.forEach(k => all ? set.delete(k) : set.add(k)); }
-      const sx = window.scrollX, wrap = document.querySelector("#off .calwrap"), sl = wrap ? wrap.scrollLeft : 0;
+      const wrap = document.querySelector("#off .gridwrap"), sl = wrap ? wrap.scrollLeft : 0;
       await renderOff(); saveOff(ym);
-      const w2 = document.querySelector("#off .calwrap"); if (w2) w2.scrollLeft = sl; window.scrollTo(sx, window.scrollY);
+      const w2 = document.querySelector("#off .gridwrap"); if (w2) w2.scrollLeft = sl;
+    }
+    else if (a === "offToAssign") {
+      // この週の予約の管理を開いて、未確定なら自動で割り振る
+      S.week = S.offWeek; showView("assign"); await loadWeek();
+      if (!S.confirmed && confirm("この週の空いている枠に、ルールどおり自動で予約を入れます（未確定で入ります。確定するまで教習生には通知されません）。よろしいですか？")) await autoAssign();
     }
     else if (a === "kenteiPass") {
       const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];

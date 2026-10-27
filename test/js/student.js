@@ -3,10 +3,10 @@ import {
   doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where, getDocs, serverTimestamp, onSnapshot
 } from "./backend.js";
 import {
-  CFG, db, WD, P, ymOf, dateStr, parseDate, addDays, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
+  CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, offDeadlineOf, offLocked, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
+  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -21,7 +21,7 @@ const MONTHS = [
   { y: now.getFullYear(), m: now.getMonth() + 1 },
   { y: new Date(now.getFullYear(), now.getMonth() + 1, 1).getFullYear(), m: new Date(now.getFullYear(), now.getMonth() + 1, 1).getMonth() + 1 }
 ];
-const S = { tab: "cal", mi: 1, student: null, avail: {}, off: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
+const S = { tab: "cal", mi: 1, student: null, avail: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
 
 async function load() {
   if (!T) return fail("QRコードから開いてください。QRコードが手元にない場合は、事務所にお問い合わせください。");
@@ -33,14 +33,9 @@ async function load() {
       const md_ = await getDoc(doc(db, "students", T, "months", ymOf(y, m)));
       S.avail[ymOf(y, m)] = new Set(md_.exists() ? md_.data().slots || [] : []);
     }
-    // 担当の指導員の予定（✕）。✕の時間は◯を付けられない
-    for (const { y, m } of MONTHS) {
-      const od = S.student.instructorUid ? await getDoc(doc(db, "offs", `${S.student.instructorUid}_${ymOf(y, m)}`)) : null;
-      S.off[ymOf(y, m)] = new Set(od && od.exists() ? od.data().slots || [] : []);
-    }
     const bq = query(collection(db, "students", T, "bookings"), where("status", "in", ["confirmed", "cancelled"]));
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
-    S.mi = nextMonthFilled() || !offLocked(ymOf(MONTHS[1].y, MONTHS[1].m)) ? 0 : 1;
+    S.mi = nextMonthFilled() ? 0 : 1;
     render();
     if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T, S.student.instructorUid); }
   } catch (e) { fail(friendlyError(e)); }
@@ -185,19 +180,12 @@ function hwCheck() {
     <div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
   return true;
 }
-const isOffSlot = (ym, k) => !!(S.off[ym] && S.off[ym].has(k));
 const lockedNote = () => CFG.noRemoveAfterDeadline
   ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
   : "予約が入っていない枠は変更できます。";
 function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   let h = "";
-  // 次の月は、指導員の予定（✕）の締切の翌日から付けられる（先に指導員の予定が決まるように）
-  if (!offLocked(ym)) {
-    const od = addDays(parseDate(offDeadlineOf(ym)), 1);
-    return `<div class="banner info"><b>${m}月分の空き時間は、${od.getMonth() + 1}月${od.getDate()}日から入力できます。</b><br>先に指導員の予定が決まり、教習がない時間は✕で表示されます。</div>
-      <div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
-  }
   const filled = set.size > 0, open = !pastDeadline(ym);
   if (stopped()) h += `<div class="banner ${S.student.graduatedOn ? "ok" : "warn"}">${stopMsg()}</div>`;
   if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;
@@ -227,8 +215,6 @@ function renderCal() {
       const b = confirmedAt(ds, p);
       if (b) {
         h += `<td${tc(d, p === 10)}><button class="cell ${b.cancelRequested ? "req" : "booked"}" data-act="locked" data-id="${b.id}" aria-label="${label(ds, p)} 予約済み">予</button></td>`;
-      } else if (isOffSlot(ym, slotKey(d, p))) {
-        h += `<td${tc(d, p === 10)}><button class="cell ng" data-act="offInfo" aria-label="${label(ds, p)} 指導員の都合で教習がありません">✕</button></td>`;
       } else {
         const on = set.has(slotKey(d, p));
         h += `<td${tc(d, p === 10)}><button class="cell ${on ? "on" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}">${on ? "◯" : ""}</button></td>`;
@@ -237,7 +223,7 @@ function renderCal() {
     h += `</tr>`;
   }
   h += `</tbody></table></div>
-  <div class="legend"><span><i class="sw" style="background:var(--blue);border-color:var(--blue)"></i>空いている</span><span><i class="sw" style="background:var(--lv3-soft);border-color:var(--lv3)"></i>✕ 教習がない時間</span><span><i class="sw" style="background:var(--orange-soft);border-color:var(--orange)"></i>予約済み（変更不可）</span><span><i class="sw"></i>空いていない</span></div>
+  <div class="legend"><span><i class="sw" style="background:var(--blue);border-color:var(--blue)"></i>空いている</span><span><i class="sw" style="background:var(--orange-soft);border-color:var(--orange)"></i>予約済み（変更不可）</span><span><i class="sw"></i>空いていない</span></div>
   <div class="tools">${S.mi === 1 ? `<button class="btn" data-act="copy">今月と同じにする</button>` : "<span></span>"}<button class="btn" data-act="bulk">曜日でまとめて選ぶ</button></div>`;
   return h;
 }
@@ -300,7 +286,7 @@ function scheduleSave(ym) {
 // その日の、予約が入っていない時限と、全部に◯が付いているか
 function dayState(ym, y, m, d) {
   const ds = dateStr(new Date(y, m - 1, d));
-  const free = []; for (let p = 1; p <= 10; p++) if (!confirmedAt(ds, p) && !isOffSlot(ym, slotKey(d, p))) free.push(p);
+  const free = []; for (let p = 1; p <= 10; p++) if (!confirmedAt(ds, p)) free.push(p);
   return { ds, free, all: free.length > 0 && free.every(p => S.avail[ym].has(slotKey(d, p))) };
 }
 function dayAllSheet(d) {
@@ -372,7 +358,6 @@ document.addEventListener("click", async e => {
     closeSheet(); addSlot(ym, k); render(); scheduleSave(ym); hwCheck();
   }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
-  else if (a === "offInfo") toast("この時間は指導員の都合で教習がありません");
   else if (a === "toggle") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const k = slotKey(+t.dataset.d, +t.dataset.p);
     if (S.avail[ym].has(k)) {
@@ -398,7 +383,7 @@ document.addEventListener("click", async e => {
     const ym = ymOf(nx.y, nx.m); let n = 0;
     for (let d = 1; d <= daysIn(nx.y, nx.m); d++) {
       const w = new Date(nx.y, nx.m - 1, d).getDay();
-      Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2 && !isOffSlot(ym, slotKey(d, +p))) { addSlot(ym, slotKey(d, +p)); n++; } });
+      Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2) { addSlot(ym, slotKey(d, +p)); n++; } });
     }
     render(); scheduleSave(ym); if (!(n && hwCheck())) toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
   }
@@ -410,7 +395,7 @@ document.addEventListener("click", async e => {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); let n = 0;
     // 今月は今日から（過ぎた日には付けない）
     for (let d = S.mi === 0 ? now.getDate() : 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
-      const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p) && !isOffSlot(ym, slotKey(d, p))) { addSlot(ym, slotKey(d, p)); n++; }
+      const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { addSlot(ym, slotKey(d, p)); n++; }
     });
     closeSheet(); render(); if (n) scheduleSave(ym); if (!(n && hwCheck())) toast(n ? `${n}枠に◯を付けました` : "曜日と時限を選んでください");
   }
