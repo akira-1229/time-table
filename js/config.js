@@ -6,7 +6,7 @@
 self.APP_CONFIG = {
   // デモモード：true の間は見本データで動く（Firebaseの設定なしで画面を確認できる）
   // Firebaseの設定が終わったら false にする
-  demo: true,
+  demo: false,
 
   // Firebaseコンソール → プロジェクトの設定 → マイアプリ → SDKの設定と構成（構成）
   firebase: {
