@@ -118,7 +118,7 @@ function renderStudentsPC() {
     ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => distOf(kenteiOf(s)) }]),
     { k: "startDate", t: "教習開始", sort: s => distOf(s.startDate) }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
-    { k: "active", t: "状態", html: s => s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
+    { k: "active", t: "状態", html: s => s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>', sort: s => s.active === false ? 1 : 0 },
     ...(S.isAdmin ? [{ k: "inst", t: "担当", html: assignSelect, sort: s => iname(s.instructorUid) }] : []),
     { t: "", html: s => `<button class="btn" data-act="edit" data-s="${s.token}">編集</button>` }
   ];
@@ -137,7 +137,7 @@ function renderStudents() {
   <div class="field"><label for="msort">並べ替え</label><select id="msort">${SORTS.filter(x => !(x[4] && S.isAdmin)).map(([k, t]) => `<option value="${k}" ${S.msort === k ? "selected" : ""}>${t}</option>`).join("")}</select></div></div>
   <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th>${S.isAdmin ? "<th>担当</th>" : ""}<th></th></tr></thead><tbody>`;
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage, s)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage, s)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
   });
   h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;

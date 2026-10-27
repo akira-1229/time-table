@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -68,6 +68,7 @@ function staffItems() {
   const items = [];
   cancelReqGroups().forEach(b => { const s = ST(b.token), ps = b.pairId ? S.cancelReqs.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period).sort((m, n) => m - n) : [b.period]; items.push([`cr:${b.id}`, noticeRow("キャンセル希望", `${nsName(s)}<small>${mdS(b.date)}${ps.join("・")}限</small>`, "warn")]); });
   S.students.filter(s => kenteiOn(s)).forEach(s => items.push([`kt:${s.token}:${dateStr(today())}`, noticeRow("本日検定", nsName(s), "ok")]));
+  kenteiDue().forEach(s => items.push([`kr:${s.token}:${s[`mikiwame${s.stage}`].kenteiDate}`, noticeRow("検定結果", `${nsName(s)}<small>${KN(s)}の結果を入れてください</small>`, "warn")]));
   const unchecked = uncheckedItems();
   if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
   S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
@@ -213,6 +214,9 @@ function orderNg(s, it) {
   if (!it.lessonType && !s.hwDone && on(H)) return `${H}時限目は高速教習ですが、通常の教習になっています`;
   return "";
 }
+// 検定の結果待ち：みきわめ合格・検定日が今日まで・結果をまだ入れていない人
+const KN = s => s.stage === 1 ? "修了検定" : "卒業検定";
+const kenteiDue = () => S.students.filter(s => { const mk = s[`mikiwame${s.stage}`]; return mk && mk.passed && mk.kenteiDate && mk.kenteiDate <= dateStr(today()) && !mk.kenteiResult; });
 // 終わった教習（実施・欠席のチェック待ち）。危険予測・高速教習は組の最後の時限まで終わってから出す（途中でチェックして組が割れないように）
 const uncheckedItems = () => lessonItems(S.pending.filter(b => b.status === "confirmed")).filter(it => it.bookings.every(b => bookingEnd(b) <= new Date()));
 const weekCount = tok => S.bookings.filter(b => b.token === tok).length;
@@ -388,6 +392,8 @@ function render() {
     h += `</div>`;
   }
   const kt = S.students.filter(s => kenteiOn(s));
+  const kdue = kenteiDue();
+  if (kdue.length) h += `<div class="banner warn"><b>検定の結果を入れてください</b>${kdue.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${md(s[`mikiwame${s.stage}`].kenteiDate)} ${KN(s)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="kenteiFail" data-s="${s.token}">不合格</button><button class="btn accent" data-act="kenteiPass" data-s="${s.token}">合格</button></span></div>`).join("")}</div>`;
   if (kt.length) h += `<div class="banner ok"><b>本日、検定日の方</b><ul style="margin:6px 0 0;padding-left:1.4em">${kt.map(s => `<li>${esc(nm(s))}（第${[1, 2].find(n => s[`mikiwame${n}`] && s[`mikiwame${n}`].kenteiDate === dateStr(today()))}段階）</li>`).join("")}</ul></div>`;
   const exp = S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days);
   if (exp.length) h += `<div class="banner warn"><b>期限が近い教習生がいます（${CFG.expiryWarnDays || 30}日以内）</b>${exp.map(([s, e]) => `<br>${esc(nm(s))}：<span style="${e.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${esc(expiryText(e))}</span>`).join("")}</div>`;
@@ -431,6 +437,7 @@ function render() {
     h += `<div class="heatleg"><span><i style="background:var(--lv1-soft);border-color:var(--lv1)"></i>少ない（${T1}人以下）</span><span><i style="background:var(--lv2-soft);border-color:var(--lv2)"></i>中間（${T1 + 1}〜${T2}人）</span><span><i style="background:var(--lv3-soft);border-color:var(--lv3)"></i>多い（${T2 + 1}人以上）</span></div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">数字と棒の長さは、その枠に入れる人数（この週の最多${maxN}人を基準に色分け）</div>`;
   }
+  if ((CFG.autoAssign || {}).weeklyMax && !S.confirmed) h += `<button class="btn primary full" style="margin-bottom:8px" data-act="autoAssign">この週を自動で割り振る（未確定で入ります）</button>`;
   h += weekNav + `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
   const tds = dateStr(today()), tc = d => d === tds ? "tday" : "";
   ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
@@ -600,7 +607,7 @@ function darkPairSheet(s, ds, a, type) {
   <div class="list"><button class="btn accent full" data-act="assignPairForce" data-s="${s.token}" data-d="${ds}" data-p="${a}" data-t="${type}">警告を確認して入れる（強制）</button>
   <button class="btn full" data-act="close">やめる</button></div>`);
 }
-async function assignPair(tok, ds, a, type = "kiken", force, gk) {
+async function assignPair(tok, ds, a, type = "kiken", force, gk, quiet) {
   const s = ST(tok);
   const ev = evaluatePair(s, ds, a, type);
   if (!ev.ok) return toast(ev.reason);
@@ -616,11 +623,11 @@ async function assignPair(tok, ds, a, type = "kiken", force, gk) {
     S.bookings.push({ id: ref.id, token: tok, ...data }); S.pending.push(S.bookings.at(-1));
   }
   if (S.confirmed) { await notifyStudent(tok, "added", "予約が追加されました", `${md(ds)} ${spanText(a, type)}限（${L}）`); toast(`${nm(s)}に通知しました`); }
-  else toast(`${md(ds)} ${spanText(a, type)}限に${nm(s)}の${L}を入れました`);
-  render();
+  else if (!quiet) toast(`${md(ds)} ${spanText(a, type)}限に${nm(s)}の${L}を入れました`);
+  if (!quiet) render();
 }
 
-async function assign(tok, ds, p, gk) {
+async function assign(tok, ds, p, gk, quiet) {
   const s = ST(tok);
   const ev = evaluate(s, ds, p);
   if (ev.ok === false) return toast(ev.reason);
@@ -630,8 +637,53 @@ async function assign(tok, ds, p, gk) {
   const ref = await addDoc(collection(db, "students", tok, "bookings"), data);
   S.bookings.push({ id: ref.id, token: tok, ...data }); S.pending.push(S.bookings.at(-1));
   if (S.confirmed) { await notifyStudent(tok, "added", "予約が追加されました", label(ds, p)); toast(`${nm(s)}に通知しました`); }
-  else toast(`${label(ds, p)} に${nm(s)}を入れました`);
-  render();
+  else if (!quiet) toast(`${label(ds, p)} に${nm(s)}を入れました`);
+  if (!quiet) render();
+}
+// この週の空いている枠に、ルールどおり自動で割り振る（未確定で入る。指導員が見て直してから確定する。依頼者と決めた考え方）
+//  ・この週の予約が少ない人から1人ずつ交代で（並んだら教習期限が近い人）。1人1週 autoAssign.weeklyMax 時限まで。日時の早い枠から
+//  ・その段階の最低時限まで入れたら、みきわめの結果が出るまで入れない（不合格なら1つずつ）。教習の順番がずれている人は入れない
+//  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
+//  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
+async function autoAssign() {
+  if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
+  const max = (CFG.autoAssign || {}).weeklyMax || 6, gk = new Map(), ng = new Set();
+  let made = 0;
+  sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
+  try {
+    for (let round = 0; round < 80; round++) {
+      let progress = false;
+      const list = S.students.slice().sort((a, b) => weekCount(a.token) - weekCount(b.token) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
+      for (const s of list) {
+        if (weekCount(s.token) >= max || gk.has(s.token)) continue;
+        const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
+        if (mk && mk.passed) continue;
+        if (!pl.ok) { ng.add(s.token); continue; }
+        if (!(pl.total < lessonMin(s.stage, s) || (mk && !mk.passed && !pendingOf(s).length))) continue;
+        const types = specialTypes(s), tries = types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
+        let hit = "";
+        for (const d of days()) {
+          for (let q = 1; q <= 10 && !hit; q++) for (const ty of tries) {
+            const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
+            if (ev.ok === false || ev.dark) continue;
+            const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
+            if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); hit = "skip"; break; }
+            if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
+            hit = "ok"; break;
+          }
+          if (hit) break;
+        }
+        if (hit === "ok") { made++; progress = true; }
+      }
+      if (!progress) break;
+    }
+  } finally { closeSheet(); render(); }
+  const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
+  sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
+    ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため入れていません</b>${[...gk].map(([t, n]) => `<br>${esc(nm(ST(t)))}：${n}`).join("")}<br><span style="font-size:12px">学科の受講を確かめてから、手で入れてください。</span></div>` : ""}
+    ${ng.size ? `<div class="banner warn"><b>教習の順番がずれているため入れていません</b>${[...ng].map(t => `<br>${esc(nm(ST(t)))}`).join("")}</div>` : ""}
+    ${none.length ? `<div class="banner info"><b>この週に1つも入らなかった教習生</b>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }
 // 危険予測・高速教習の組（2時限・3時限）を全部集める。表示中の週に無い予約（別の週のキャンセル希望など）もあるので、DBから読む
 async function pairGroup(b) {
@@ -896,6 +948,48 @@ document.addEventListener("click", async e => {
     else if (a === "groupJoin") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t, +t.dataset.p); }
     else if (a === "unbook") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); toast("取り消しました"); }
     else if (a === "swap") { closeSheet(); const b = S.bookings.find(x => x.id === t.dataset.id); await removeBooking(b, "remove"); render(); slotSheet(b.date, b.period, b.lessonType || "normal"); }
+    else if (a === "kenteiPass") {
+      const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
+      sheet(st.stage === 1 ? `<h3>修了検定 合格</h3><p>${esc(nm(st))}（検定日 ${md(mk.kenteiDate)}）</p>
+        <div class="field"><label for="kp_date">仮免交付日</label><input id="kp_date" type="date" value="${esc(mk.kenteiDate)}"></div>
+        <p style="font-size:13px;color:var(--muted)">第2段階に進みます。時限数は0から数え直し、仮免期限日は交付日から自動で入ります。</p>
+        <div class="list"><button class="btn accent full" data-act="kpOk" data-s="${st.token}">OK</button><button class="btn full" data-act="close">やめる</button></div>`
+        : `<h3>卒業検定 合格</h3><p>${esc(nm(st))}（検定日 ${md(mk.kenteiDate)}）</p>
+        <p style="font-size:13px;color:var(--muted)">卒業として記録し、担当の教習生の一覧から外します（「教習生の管理」には「卒業」で残ります）。</p>
+        <div class="list"><button class="btn accent full" data-act="kpOk" data-s="${st.token}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
+    }
+    else if (a === "kpOk") {
+      const st = ST(t.dataset.s), key = `mikiwame${st.stage}`, mk = st[key];
+      let upd;
+      if (st.stage === 1) {
+        const d = document.getElementById("kp_date").value;
+        if (!d) return toast("仮免交付日を入れてください");
+        upd = { stage: 2, priorDone: 0, doneCount: 0, kikenDone: false, hwDone: false, karimenIssued: d, karimenExpiry: karimenExpiryOf(d), [key]: { ...mk, kenteiResult: "pass" } };
+      } else upd = { active: false, graduatedOn: mk.kenteiDate, [key]: { ...mk, kenteiResult: "pass" } };
+      t.disabled = true;
+      await updateDoc(doc(db, "students", st.token), upd);
+      Object.assign(st, upd);
+      if (st.active === false) S.students = S.students.filter(x => x.token !== st.token);
+      closeSheet(); render(); toast(st.active === false ? `${nm(st)}の卒業を記録しました` : `${nm(st)}は第2段階に進みました`);
+    }
+    else if (a === "kenteiFail") {
+      const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
+      sheet(`<h3>${KN(st)} 不合格</h3><p>${esc(nm(st))}（検定日 ${md(mk.kenteiDate)}）</p>
+        <div class="field"><label for="kf_date">次の検定日</label><input id="kf_date" type="date"></div>
+        <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="kf_und"> 次の検定日は未確定</label>
+        <div class="list"><button class="btn accent full" data-act="kfOk" data-s="${st.token}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
+    }
+    else if (a === "kfOk") {
+      const st = ST(t.dataset.s), key = `mikiwame${st.stage}`, mk = st[key];
+      const d = document.getElementById("kf_date").value, und = document.getElementById("kf_und").checked;
+      if (!d && !und) return toast("次の検定日を入れるか、「未確定」にチェックしてください");
+      if (d && d <= mk.kenteiDate) return toast("次の検定日は、今回の検定日より後の日にしてください");
+      const upd = { [key]: { ...mk, kenteiDate: und ? null : d, kenteiUndecided: und, kenteiFails: [...(mk.kenteiFails || []), mk.kenteiDate] } };
+      t.disabled = true;
+      await updateDoc(doc(db, "students", st.token), upd);
+      Object.assign(st, upd); closeSheet(); render(); toast(`${nm(st)}の${KN(st)}を不合格として記録しました`);
+    }
+    else if (a === "autoAssign") { if (confirm("この週の空いている枠に、ルールどおり自動で予約を入れます（未確定で入ります。確定するまで教習生には通知されません）。よろしいですか？")) await autoAssign(); }
     else if (a === "confirm") { t.disabled = true; await confirmWeek(); }
     else if (a === "markDone" || a === "markAbsent") {
       const ids = t.dataset.ids.split(",");
@@ -957,8 +1051,9 @@ document.addEventListener("toggle", e => { if (e.target.classList && e.target.cl
 document.addEventListener("change", e => {
   if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";
   if (e.target.id === "gk_chk") document.getElementById("gk_ok").disabled = !e.target.checked;
+  if (e.target.id === "kf_und") { const d = document.getElementById("kf_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
   if (e.target.id === "mk_und") { const d = document.getElementById("mk_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount };
+if (DEMO) self.__t = { S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign };

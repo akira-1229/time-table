@@ -165,8 +165,9 @@ document.addEventListener("pref:change", () => { if (S.student) render(); });
 
 // 利用停止中（指導員が「停止」にした人）は◯を付けられない（依頼者指定の文言）
 const stopped = () => S.student && S.student.active === false;
-const STOP_MSG = "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
-const stopSheet = () => sheet(`<h3>◯を付けられません</h3><p style="font-size:16px">${STOP_MSG}</p><div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
+// 卒業した人（卒業検定に合格）も利用停止と同じく◯は付けられない
+const stopMsg = () => S.student.graduatedOn ? "卒業おめでとうございます。空き時間の登録は終わりました。" : "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
+const stopSheet = () => sheet(`<h3>◯を付けられません</h3><p style="font-size:16px">${stopMsg()}</p><div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
 // 第2段階で高速教習がまだの人：付けた◯では高速教習をしばらく（hwWaitWarnDays 日以上）入れられない時に知らせる
 // （夜だけの人は、日没が早い期間に高速教習が入らないため。依頼者指定の文言。開いている間に1回だけ）
 function hwCheck() {
@@ -186,7 +187,7 @@ function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   let h = "";
   const filled = set.size > 0, open = !pastDeadline(ym);
-  if (stopped()) h += `<div class="banner warn">${STOP_MSG}</div>`;
+  if (stopped()) h += `<div class="banner ${S.student.graduatedOn ? "ok" : "warn"}">${stopMsg()}</div>`;
   if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;
   else if (open) h += `<div class="banner warn"><b>${m}月分の入力締切は${dlText(ym)}です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else if (S.mi === 1 && !filled) h += `<div class="banner warn"><b>${m}月分の入力締切（${dlText(ym)}）を過ぎています。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
