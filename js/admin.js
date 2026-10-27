@@ -272,39 +272,42 @@ function editSheet(s) {
   <div></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><select id="f_lic">${opt("", s.license || "", "選んでください")}${[...new Set([...(CFG.licenseTypes || []), ...(s.license ? [s.license] : [])])].map(x => opt(x, s.license || "")).join("")}</select></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
-  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
+  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : k === "classStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（教習開始日から自動）</span>` : k === "skillStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（最初の教習を実施にした日が自動で入ります）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
   <h3 style="margin-top:6px">教習の状況</h3>
   <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
   <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
   <div class="field"><label for="f_ac">状態</label><select id="f_ac">${opt(1, s.active === false ? 0 : 1, "利用中")}${opt(0, s.active === false ? 0 : 1, "停止")}</select></div></div>
   <div class="row"><div class="field"><label for="f_pd">この段階で、これまでに受けた時限数</label><input id="f_pd" type="number" min="0" max="40" inputmode="numeric" value="${s.priorDone || 0}"></div><div></div></div>
-  <div class="row" id="f_sp" ${+s.stage === 2 ? "" : "hidden"}><div class="field"><label for="f_kd">危険予測</label><select id="f_kd">${opt(0, s.kikenDone ? 1 : 0, "まだ")}${opt(1, s.kikenDone ? 1 : 0, "受講済み")}</select></div>
-  <div class="field"><label for="f_hd">高速教習</label><select id="f_hd">${opt(0, s.hwDone ? 1 : 0, "まだ")}${opt(1, s.hwDone ? 1 : 0, "受講済み")}</select></div></div>
   <div class="field"><label for="f_idl">空き時間の入力締切</label><select id="f_idl">${idlOptions(s.inputDeadline || "")}</select>
     <span style="font-size:12px;color:var(--muted)">社会人などで月末・月初に予定が分かる人は、締切を遅らせてください。締切を過ぎると、教習生は◯を外せなくなります。</span></div>
   <div class="row"><div class="field"><label for="f_min1">第1段階の最低教習時限</label><input id="f_min1" type="number" min="1" max="40" inputmode="numeric" value="${esc(s.minLessons1 || "")}" placeholder="${(CFG.lessons[1] || {}).min || 12}（標準）"></div><div></div></div>
   <p style="font-size:12px;color:var(--muted);margin:-6px 0 10px">空欄なら標準の${(CFG.lessons[1] || {}).min || 12}時限です。みきわめのタイミングと進み具合の表示がこの時限数で決まります。</p>
   ${mkFields(s)}
-  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage, s)}時限）。段階を変えると、時限数・危険予測・高速教習は0から数え直します。</p>`}
+  ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage, s)}時限）。段階を変えると、時限数は0から数え直します。危険予測・高速教習を受けたかは、第2段階の時限数から自動で決まります。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
   ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
-// 高速教習・危険予測を受講済みの人を、前に戻せないようにする（受講済み→まだ、時限数を減らす、第1段階に戻す）
+// 危険予測・高速教習を受講済みかは、第2段階の受けた時限数から決める（選ぶ欄は無し。依頼者指定）
+//   危険予測は12時限目：11時限まで＝まだ、12時限以上＝受講済み
+//   高速教習は13時限目から（3時限なら13〜15、単独高速なら13・14）：12時限まで＝まだ、15時限以上＝受講済み、13・14時限は実施チェックの記録のまま
+function specialDoneOf(old, data) {
+  const L2 = CFG.lessons[2] || {}, K = L2.kikenNo || 12, H = L2.hwNo || 13;
+  if (data.stage !== 2) { data.kikenDone = false; data.hwDone = false; return; }
+  const same = old && old.stage === 2, total = data.priorDone + (same ? old.doneCount || 0 : 0);
+  data.kikenDone = total >= K;
+  data.hwDone = total < H ? false : total >= H + 2 ? true : !!(same && old.hwDone);
+}
+// 高速教習・危険予測を受講済みの人を、前に戻せないようにする（時限数を減らす、第1段階に戻す）
 function backwardsError(old, data) {
   const L2 = CFG.lessons[2] || {}, hwNo = L2.hwNo || 13, kkNo = L2.kikenNo || 12;
   const total = data.priorDone + (old && old.stage === data.stage ? old.doneCount || 0 : 0);
   if (old && old.stage === 2 && data.stage === 1 && (old.hwDone || old.kikenDone)) return `${old.hwDone ? "高速教習" : (CFG.kiken || {}).label || "危険予測"}を受講済みのため、第1段階には戻せません`;
-  if (old && old.stage === 2 && data.stage === 2) {
-    if (old.hwDone && !data.hwDone) return "高速教習を受講済みの人を「まだ」に戻すことはできません";
-    if (old.kikenDone && !data.kikenDone) return `${(CFG.kiken || {}).label || "危険予測"}を受講済みの人を「まだ」に戻すことはできません`;
-  }
-  // 時限数・受講済みを変えた時だけ確かめる（前からのデータで、名前などの保存が止まらないように）
-  const changed = !old || data.priorDone !== (old.priorDone || 0) || data.hwDone !== !!old.hwDone || data.kikenDone !== !!old.kikenDone || data.stage !== old.stage;
-  if (!changed) return "";
-  if (data.hwDone && total < hwNo + 1) return `高速教習を受講済みの人は、受けた時限数が${hwNo + 1}時限より少なくなりません（今の入力では${total}時限です）`;
-  if (data.kikenDone && total < kkNo) return `${(CFG.kiken || {}).label || "危険予測"}を受講済みの人は、受けた時限数が${kkNo}時限より少なくなりません（今の入力では${total}時限です）`;
+  // 時限数を変えた時だけ確かめる（前からのデータで、名前などの保存が止まらないように）
+  if (!old || old.stage !== 2 || data.stage !== 2 || data.priorDone === (old.priorDone || 0)) return "";
+  if (old.hwDone && total < hwNo + 1) return `高速教習を受講済みの人は、受けた時限数が${hwNo + 1}時限より少なくなりません（今の入力では${total}時限です）`;
+  if (old.kikenDone && total < kkNo) return `${(CFG.kiken || {}).label || "危険予測"}を受講済みの人は、受けた時限数が${kkNo}時限より少なくなりません（今の入力では${total}時限です）`;
   return "";
 }
 // おかしな日付の警告（保存はできる）。教習開始日が確定済みの予約より後、前後関係の逆転、未来の生年月日など
@@ -381,7 +384,6 @@ document.addEventListener("input", e => {
 document.addEventListener("change", async e => {
   if (e.target.id === "msort") { S.msort = e.target.value; render(); return; }
   // 危険予測・高速教習は第2段階だけ（第1段階では出さない）
-  if (e.target.id === "f_st") { const x = document.getElementById("f_sp"); if (x) x.hidden = e.target.value !== "2"; return; }
   if (e.target.dataset.act !== "reassign") return;
   const s = S.students.find(x => x.token === e.target.dataset.s), uid = e.target.value;
   if (!uid || !confirm(`${s.name}さんの担当を${iname(uid)}さんに変えます。すでに入っている予約は、前の担当のまま残ります。よろしいですか？`)) { render(); return; }
@@ -428,20 +430,17 @@ document.addEventListener("click", async e => {
       if (!isKatakana(data.nameKana)) return toast("フリガナはカタカナで入れてください（ひらがなは自動でカタカナになります）");
       data.inputDeadline = v("f_idl") || null;
       data.priorDone = Math.max(0, Math.floor(+document.getElementById("f_pd").value || 0));
-      data.kikenDone = document.getElementById("f_kd").value === "1";
-      data.hwDone = document.getElementById("f_hd").value === "1";
       { const m1 = num("f_min1", 40); data.minLessons1 = m1 ? m1 : null; }
-      if (data.stage !== 2) { data.kikenDone = false; data.hwDone = false; }
       const old = t.dataset.s ? S.students.find(x => x.token === t.dataset.s) : null;
+      specialDoneOf(old, data);
       const ng = backwardsError(old, data); if (ng) return toast(ng);
       const warns = await dateWarnings(old, data);
       if (warns.length && !confirm(`日付を確認してください。\n\n${warns.map(w => `・${w}`).join("\n")}\n\nこのまま保存しますか？`)) return;
       if (old && old.stage !== data.stage) {
         // 段階が変わったら、その段階の時限数は0から数え直す（入力欄を変えていなければ0にする）
         if (data.priorDone === (old.priorDone || 0)) data.priorDone = 0;
-        if (data.kikenDone === !!old.kikenDone) data.kikenDone = false;
-        if (data.hwDone === !!old.hwDone) data.hwDone = false;
         data.doneCount = 0;
+        specialDoneOf(null, data);
       }
       if (!old) data.doneCount = 0;
       const kd = document.getElementById("f_kentei");

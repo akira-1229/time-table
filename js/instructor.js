@@ -232,13 +232,12 @@ const inDarkSeason = ds => {
 //   ok:false … 入れられない（reason に理由）
 // 連続3時限は高速教習（3時限）だけ。高速教習・危険予測・単独高速は evaluatePair で判定する
 const linkedP = (x, y) => y === x + 1 && !(CFG.breakAfter || []).includes(x);   // 休みをはさまずに続いているか
-// 教習期限・仮免期限（第2段階）を過ぎた日と、第1段階で技能開始日（空なら教習開始日）より前の日は入れない（依頼者指定）
+// 教習期限・仮免期限（第2段階）を過ぎた日と、第1段階で教習開始日より前の日は入れない（依頼者指定）
 // 第2段階は、検定の前に予約を入れておくことがあるため、仮免交付日より前でも入れられる
 function dateBlock(s, ds) {
   if (s.deadline && ds > s.deadline) return `教習期限（${md(s.deadline)}）を過ぎています`;
   if (s.stage === 2 && s.karimenExpiry && ds > s.karimenExpiry) return `仮免期限（${md(s.karimenExpiry)}）を過ぎています`;
-  const st = s.skillStart || s.startDate;
-  if (s.stage === 1 && st && ds < st) return `${s.skillStart ? "技能開始日" : "教習開始日"}（${md(st)}）より前です`;
+  if (s.stage === 1 && s.startDate && ds < s.startDate) return `教習開始日（${md(s.startDate)}）より前です`;
   return "";
 }
 function evaluate(s, ds, p) {
@@ -575,9 +574,11 @@ function gakkaAsk(s, ds, periods, lessonType = "") {
 }
 function gakkaSheet(s, rules, go) {
   S.gakkaGo = go;
-  sheet(`<h3>学科の受講確認</h3><p>${esc(nm(s))}（第${s.stage}段階）${rules.map(r => `${r.no}時限目`).join("・")}の教習です。</p>
-  ${rules.map(r => `<div class="banner warn"><b>この教習は学科の${r.gakka}番を受講していないと受けることはできませんが、受講済ですか？</b></div>`).join("")}
-  <div class="list"><button class="btn primary full" data-act="gakkaOk">OK</button></div>`);
+  // 「はい」にチェックを付けないとOKを押せない（依頼者指定）
+  sheet(`<h3>学科の受講確認</h3><p>${esc(nm(s))}（第${s.stage}段階 ${rules.map(r => `${r.no}時限目`).join("・")}）</p>
+  ${rules.map(r => `<p style="font-size:16px"><b>${esc(r.ask || `学科の${r.gakka}教程は終了していますか？`)}</b></p>`).join("")}
+  <label class="ackchk">はい <input type="checkbox" id="gk_chk"></label>
+  <div class="list" style="margin-top:10px"><button class="btn primary full" id="gk_ok" data-act="gakkaOk" disabled>OK</button></div>`);
 }
 
 /* ---------- 書き込み ---------- */
@@ -680,6 +681,8 @@ async function markResult(ids, result, mk = null) {
     if (it.lessonType === "kiken") upd.kikenDone = true;
     if (isHwType(it.lessonType)) upd.hwDone = true;
     if (mk) upd[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids, at: Timestamp.now() };
+    // 技能開始日：最初に「実施」にした教習の日を自動で入れる（依頼者指定）
+    if (s && (!s.skillStart || s.skillStart > it.date)) upd.skillStart = it.date;
     batch.update(doc(db, "students", tok), upd);
   } else {
     batch.set(doc(collection(db, "outbox")), outboxData(tok, "absent", "欠席のお知らせ", `${text} は欠席として記録しました。次の予約は担当指導員からお知らせします。`));
@@ -688,7 +691,7 @@ async function markResult(ids, result, mk = null) {
   await batch.commit();
   if (result !== "done") sendNow();
   if (s) {
-    if (result === "done") { s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (isHwType(it.lessonType)) s.hwDone = true; if (mk) s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; }
+    if (result === "done") { if (!s.skillStart || s.skillStart > it.date) s.skillStart = it.date; s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (isHwType(it.lessonType)) s.hwDone = true; if (mk) s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; }
     else s.lastNotifiedAt = Timestamp.now();
   }
   S.pending = S.pending.filter(b => !ids.includes(b.id));
@@ -853,7 +856,7 @@ document.addEventListener("click", async e => {
     else if (a === "sheetType") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.v); }
     else if (a === "pairStart") { slotSheet(t.dataset.d, +t.dataset.p, t.dataset.t || "kiken", +t.dataset.v); }
     else if (a === "ptype") { S.ptype = t.dataset.v || null; render(); }
-    else if (a === "gakkaOk") { const go = S.gakkaGo; S.gakkaGo = null; t.disabled = true; closeSheet(); if (go) await go(); }
+    else if (a === "gakkaOk") { if (!document.getElementById("gk_chk")?.checked) return; const go = S.gakkaGo; S.gakkaGo = null; t.disabled = true; closeSheet(); if (go) await go(); }
     else if (a === "booked") {
       const b = S.bookings.find(x => x.id === t.dataset.id); const s = ST(b.token);
       const it = itemOf(b);
@@ -953,6 +956,7 @@ document.addEventListener("toggle", e => { if (e.target.classList && e.target.cl
 // みきわめのフォーム：合格の時だけ検定日を出す。「未確定」なら日付は入れない
 document.addEventListener("change", e => {
   if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";
+  if (e.target.id === "gk_chk") document.getElementById("gk_ok").disabled = !e.target.checked;
   if (e.target.id === "mk_und") { const d = document.getElementById("mk_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
