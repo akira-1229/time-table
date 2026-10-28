@@ -2,6 +2,8 @@
  * 空き時間登録システム 通知係（Google Apps Script）
  *
  * ・processOutbox：1分おきに起動（＋画面からウェブアプリとして呼ばれた時はすぐ）。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
+ *                  定期実行の時は、あわせて lessonCheck_ で「教習が終わったら実施・欠席を入力してください」を指導員に通知する
+ *                  （終わった瞬間に1回。入力されるまで CHECK_REPEAT_MIN 分おきに出し直す）
  * ・dailyReminder：毎朝起動。締切（教習生ごと）の数日前と前日に、その月の分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
@@ -16,6 +18,8 @@
  *   REMIND_DAYS  … 締切の何日前に知らせるか（カンマ区切り。例：3,1）
  *   EXPIRY_ALERT … 教習期限・仮免期限のいつ知らせるか（カンマ区切り。m＝ヶ月前、w＝週間前、d＝日前。省略時 2m,1m,2w）
  *   ACCESS_KEEP_DAYS … アクセス記録を残す日数（省略時 90）
+ *   CHECK_REPEAT_MIN … 実施・欠席が未入力の時に、指導員へ通知を出し直す間隔（分。省略時 30）
+ *   CHECK_HOURS      … 出し直しをする時間帯（例：9-21。省略時 9-21。夜中は送らない）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -153,7 +157,59 @@ function processOutbox(wait) {
         delivered: { integerValue: String(delivered) }
       });
     });
+    // 定期実行（1分おき）の時だけ：教習が終わったら指導員に実施・欠席の入力を促す（画面から呼ばれた時はしない）
+    if (typeof wait !== 'number') { try { lessonCheck_(); } catch (e) { Logger.log('実施・欠席のお知らせでエラー: ' + e); } }
   } finally { lock.releaseLock(); }
+}
+
+/* ---------- 教習が終わったら、指導員に「実施・欠席を入力してください」（依頼者指定） ---------- */
+// 時限の終わりの時刻（js/config.js の periods と同じ）
+const PERIOD_END = [null, '10:40', '11:40', '12:40', '14:20', '15:20', '16:30', '17:30', '18:30', '19:40', '20:40'];
+const hm_ = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+// 1分おきに呼ばれる。前回からの間に教習が終わった指導員にはすぐ、それ以外も未入力があれば CHECK_REPEAT_MIN 分おきに通知する
+function lessonCheck_() {
+  const now = new Date(), today = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const nowMin = hm_(Utilities.formatDate(now, 'Asia/Tokyo', 'HH:mm'));
+  const last = Number(prop('CHECK_LAST') || 0), stamp = Math.floor(now.getTime() / 60000);
+  PROPS.setProperty('CHECK_LAST', String(stamp));
+  const prevMin = last && stamp - last < 60 * 12 ? nowMin - (stamp - last) : nowMin - 1;   // 前回の時刻（分）。初回や長く止まっていた時は1分前
+  const repeat = Number(prop('CHECK_REPEAT_MIN') || 30), hours = (prop('CHECK_HOURS') || '9-21').split('-').map(Number);
+  const justEnded = PERIOD_END.map((e, p) => e && hm_(e) > prevMin && hm_(e) <= nowMin ? p : 0).filter(Boolean);
+  const inHours = nowMin >= hours[0] * 60 && nowMin < hours[1] * 60 + 60;
+  const repeatNow = inHours && Math.floor(nowMin / repeat) !== Math.floor(prevMin / repeat);
+  if (!justEnded.length && !repeatNow) return;
+  const ended = b => b.date < today || (b.date === today && hm_(PERIOD_END[b.period] || '23:59') <= nowMin);
+  const appUrl = prop('APP_URL'), names = {};
+  const studentName = tok => {
+    if (!(tok in names)) { const s = getDoc_(`students/${tok}`); names[tok] = s ? `${s.name}さん${s.studentNo ? `（${s.studentNo}）` : ''}` : ''; }
+    return names[tok];
+  };
+  let n = 0;
+  query_({ from: [{ collectionId: 'instructors' }] }).forEach(ins => {
+    const uid = relPath_(ins.name).split('/')[1];
+    const all = query_({
+      from: [{ collectionId: 'bookings', allDescendants: true }],
+      where: { compositeFilter: { op: 'AND', filters: [
+        { fieldFilter: { field: { fieldPath: 'instructorUid' }, op: 'EQUAL', value: { stringValue: uid } } },
+        { unaryFilter: { field: { fieldPath: 'result' }, op: 'IS_NULL' } },
+        { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN', value: { arrayValue: { values: [{ stringValue: 'draft' }, { stringValue: 'confirmed' }] } } } }
+      ] } }
+    }).map(x => Object.assign({ token: relPath_(x.name).split('/')[1] }, x.data));
+    // 危険予測・高速教習の組（2〜3時限）は1件にまとめ、最後の時限が終わってから数える
+    const list = all.filter((b, i) => !b.pairId || all.findIndex(y => y.token === b.token && y.pairId === b.pairId) === i)
+      .map(b => b.pairId ? Object.assign({}, b, { period: Math.min.apply(null, all.filter(y => y.token === b.token && y.pairId === b.pairId).map(y => y.period)),
+        last: Math.max.apply(null, all.filter(y => y.token === b.token && y.pairId === b.pairId).map(y => y.period)) }) : Object.assign({ last: b.period }, b))
+      .filter(b => ended(Object.assign({}, b, { period: b.last })));
+    if (!list.length) return;
+    // 今終わった教習がある指導員にはすぐ。それ以外は出し直しの時刻だけ
+    const fresh = list.some(b => b.date === today && justEnded.indexOf(b.last) >= 0);
+    if (!fresh && !repeatNow) return;
+    list.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.period - b.period);
+    const lines = list.slice(0, 4).map(b => `${studentName(b.token)} ${Number(b.date.slice(5, 7))}/${Number(b.date.slice(8))} ${b.period === b.last ? b.period : `${b.period}〜${b.last}`}限`);
+    n += deliver_(`instructors/${uid}`, ins.data.fcmTokens, `実施・欠席を入力してください（${list.length}件）`,
+      lines.join('、') + (list.length > 4 ? ` ほか${list.length - 4}件` : '') + '。入力するまでお知らせします。', `${appUrl}instructor.html`) ? 1 : 0;
+  });
+  if (n) Logger.log(`実施・欠席のお知らせ：指導員${n}人に送信`);
 }
 
 /* ---------- 毎朝：締切前のお知らせ・期限が近い教習生のお知らせ ---------- */
