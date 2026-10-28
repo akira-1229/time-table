@@ -705,7 +705,7 @@ async function assign(tok, ds, p, gk, quiet) {
 }
 // この週の空いている枠に、ルールどおり自動で割り振る（未確定で入る。指導員が見て直してから確定する。依頼者と決めた考え方）
 //  ・この週の予約が少ない人から1人ずつ交代で（並んだら教習期限が近い人）。1人1週 autoAssign.weeklyMax 時限まで。日時の早い枠から
-//  ・最低時限を超えて延びる人がいるので、みきわめの結果が出るまでは最低時限＋2時限まで入れる。不合格の後も、未実施の予約が2時限になるまで入れる（依頼者指定）。教習の順番がずれている人は入れない
+//  ・その段階の最低時限まで入れたら、みきわめの結果が出るまで入れない。不合格なら、未実施の予約が2時限になるまで入れる（延びる人がいるため。依頼者指定）。教習の順番がずれている人は入れない
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
 async function autoAssign() {
@@ -722,7 +722,7 @@ async function autoAssign() {
         const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
         if (mk && mk.passed) continue;
         if (!pl.ok) { ng.add(s.token); continue; }
-        if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s) + extra) continue;
+        if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s)) continue;
         const types = specialTypes(s), tries = types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
         let hit = "";
         for (const d of days()) {
@@ -1088,9 +1088,19 @@ document.addEventListener("click", async e => {
       } else upd = { active: false, graduatedOn: mk.kenteiDate, [key]: { ...mk, kenteiResult: "pass" } };
       t.disabled = true;
       await updateDoc(doc(db, "students", st.token), upd);
+      // 修了検定に合格：検定日以降に入っている（まだチェックしていない）予約は、第2段階の1時限目からに付け替える（依頼者指定）
+      let moved = 0;
+      if (st.stage === 1 && mk.kenteiDate) {
+        const bs = (await getDocs(collection(db, "students", st.token, "bookings"))).docs.filter(x => { const b = x.data(); return b.date >= mk.kenteiDate && b.status !== "cancelled" && !b.result && b.instructorUid === S.uid; });
+        const batch = writeBatch(db);
+        bs.forEach(x => batch.update(x.ref, { stage: 2, updatedAt: serverTimestamp() }));
+        if (bs.length) await batch.commit();
+        const ids = new Set(bs.map(x => x.id)); moved = ids.size;
+        [...S.bookings, ...S.pending].forEach(b => { if (ids.has(b.id)) b.stage = 2; });
+      }
       Object.assign(st, upd);
       if (st.active === false) S.students = S.students.filter(x => x.token !== st.token);
-      closeSheet(); render(); toast(st.active === false ? `${nm(st)}の卒業を記録しました` : `${nm(st)}は第2段階に進みました`);
+      closeSheet(); render(); toast(st.active === false ? `${nm(st)}の卒業を記録しました` : `${nm(st)}は第2段階に進みました${moved ? `（検定日以降の予約${moved}件は第2段階の1時限目からになります）` : ""}`);
     }
     else if (a === "kenteiFail") {
       const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
