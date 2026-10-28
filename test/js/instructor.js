@@ -990,8 +990,9 @@ document.addEventListener("click", async e => {
       // この予約（危険予測・高速教習は組ごと）を、その時間に空いているほかの指導員に頼む
       const b = S.bookings.find(x => x.id === t.dataset.id), s = ST(b.token), group = await pairGroup(b), ps = group.map(x => x.period);
       sheet(`<h3>他の人に依頼する</h3><p>探しています…</p>`);
-      const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
       const rows = [];
+      try {
+      const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
       for (const i of ins) {
         const od = await getDoc(doc(db, "offs", `${i.uid}_${b.date.slice(0, 7)}`)), off = new Set(od.exists() ? od.data().slots || [] : []);
         const day = parseDate(b.date).getDate();
@@ -1000,6 +1001,7 @@ document.addEventListener("click", async e => {
         const why = ps.some(q => off.has(slotKey(day, q))) ? "予定（✕）あり" : ps.some(q => own.some(x => x.period === q) || sub.some(x => x.period === q)) ? "ほかの予約あり" : "";
         rows.push(`<div class="item"><div><div class="t">${esc(i.name)} 指導員</div><div class="s" style="${why ? "color:var(--orange)" : ""}">${why || "空いています"}</div></div><button class="btn accent" data-act="delegateTo" data-id="${b.id}" data-u="${i.uid}" data-n="${esc(i.name)}" ${why ? "disabled" : ""}>依頼する</button></div>`);
       }
+      } catch (e) { closeSheet(); noteIndex(e); render(); return toast(friendlyError(e)); }
       sheet(`<h3>他の人に依頼する</h3><p>${esc(nm(s))}<br>${md(b.date)} ${ps.join("・")}限${typeName(b) ? `（${typeName(b)}）` : ""}</p>
         <p style="font-size:12px;color:var(--muted);margin-top:0">依頼した時限は、相手の指導員のマス目に「代わり」で出ます。担当（進み具合・実施のチェックなど）は今まで通りです。</p>
         <div class="list">${rows.join("") || '<div class="hist"><div>ほかの指導員が登録されていません。</div></div>'}</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);

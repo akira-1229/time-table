@@ -50,7 +50,8 @@ service cloud.firestore {
 
     // 指導員
     match /instructors/{uid} {
-      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      // 指導員はほかの指導員の一覧も読める（依頼先を選ぶため）
+      allow read: if isAdmin() || isInstructor() || (signedIn() && request.auth.uid == uid);
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
         || (signedIn() && request.auth.uid == uid && changedOnly(['fcmTokens', 'lastAccessAt']) && validTokens() && accessTimeOk());
@@ -101,9 +102,20 @@ service cloud.firestore {
       }
     }
 
-    // 指導員が自分の予約をまとめて読むための検索（コレクショングループ）
+    // 指導員が予約をまとめて読むための検索（コレクショングループ）
+    // ほかの指導員への依頼（1時限ごと）で、相手がその時間に空いているかを調べるため、指導員はほかの指導員の予約も読める
     match /{path=**}/bookings/{id} {
-      allow read: if isAdmin() || (isInstructor() && resource.data.instructorUid == request.auth.uid);
+      allow read: if isAdmin() || isInstructor();
+    }
+
+    // 指導員の予定（教習に出られない時間の✕）。ドキュメントID：指導員UID_YYYY-MM
+    // 依頼先が空いているかを調べるため、指導員はほかの指導員の予定も読める。書けるのは本人だけ
+    match /offs/{id} {
+      allow read: if isAdmin() || isInstructor();
+      allow write: if isAdmin()
+        || (isInstructor() && id.matches(request.auth.uid + '_[0-9]{4}-[0-9]{2}')
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.slots is list && request.resource.data.slots.size() <= 310);
     }
 
     // 週の確定記録（ドキュメントID：指導員UID_週の月曜日）
