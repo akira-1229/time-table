@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, kentei1AgeNg, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -817,12 +817,15 @@ async function markResult(ids, result, mk = null) {
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }
 // みきわめの教習を「実施」にする時のフォーム（合否・検定日・学科及び効果測定）
+// 第1段階の検定日の欄：生年月日を持たせて、18歳の誕生日より前の日を入れた時にすぐ警告する（高校生。依頼者指定）
+const ageAttr = s => s.stage === 1 && s.birthDate ? ` data-birth="${esc(s.birthDate)}"` : "";
+const ageOk = el => { const ng = el && el.dataset.birth && kentei1AgeNg(el.dataset.birth, el.value); return !ng || confirm(`${ng}\n\nこのまま検定日を入れますか？`); };
 function mikiwameSheet(s, it, ids) {
   const r = (n, v, t) => `<label class="radio"><input type="radio" name="${n}" value="${v}"> ${t}</label>`;
   sheet(`<h3>みきわめ（第${s.stage}段階 ${it.no}時限目）</h3>
   <p>${esc(nm(s))}<br>${md(it.date)} ${it.bookings.map(b => b.period).join("・")}限</p>
   <div class="field"><label>みきわめの結果</label><div class="radios">${r("mk_pass", "1", "合格")}${r("mk_pass", "0", "不合格")}</div></div>
-  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date"></div>
+  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date"${ageAttr(s)}><div class="agewarn"></div></div>
     <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="mk_und"> 検定日は未確定</label></div>
   <div class="field"><label>学科及び効果測定</label><div class="radios">${r("mk_gakka", "1", "終わっている")}${r("mk_gakka", "0", "終わっていない")}</div></div>
   <div class="list"><button class="btn accent full" data-act="mkOk" data-ids="${ids.join(",")}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
@@ -1090,7 +1093,7 @@ document.addEventListener("click", async e => {
     else if (a === "kenteiFail") {
       const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
       sheet(`<h3>${KN(st)} 不合格</h3><p>${esc(nm(st))}（検定日 ${md(mk.kenteiDate)}）</p>
-        <div class="field"><label for="kf_date">次の検定日</label><input id="kf_date" type="date"></div>
+        <div class="field"><label for="kf_date">次の検定日</label><input id="kf_date" type="date"${ageAttr(st)}><div class="agewarn"></div></div>
         <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="kf_und"> 次の検定日は未確定</label>
         <div class="list"><button class="btn accent full" data-act="kfOk" data-s="${st.token}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
     }
@@ -1099,6 +1102,7 @@ document.addEventListener("click", async e => {
       const d = document.getElementById("kf_date").value, und = document.getElementById("kf_und").checked;
       if (!d && !und) return toast("次の検定日を入れるか、「未確定」にチェックしてください");
       if (d && d <= mk.kenteiDate) return toast("次の検定日は、今回の検定日より後の日にしてください");
+      if (!und && !ageOk(document.getElementById("kf_date"))) return;
       const upd = { [key]: { ...mk, kenteiDate: und ? null : d, kenteiUndecided: und, kenteiFails: [...(mk.kenteiFails || []), mk.kenteiDate] } };
       t.disabled = true;
       await updateDoc(doc(db, "students", st.token), upd);
@@ -1125,6 +1129,7 @@ document.addEventListener("click", async e => {
       if (!pass) return toast("みきわめの結果を選んでください");
       if (pass === "1" && !date && !und) return toast("検定日を入れるか、「未確定」にチェックしてください");
       if (!gakka) return toast("学科及び効果測定が終わっているか選んでください");
+      if (pass === "1" && !und && !ageOk(document.getElementById("mk_date"))) return;
       const mk = { passed: pass === "1", kenteiDate: pass === "1" && !und ? date : null, kenteiUndecided: pass === "1" && und, gakkaDone: gakka === "1" };
       t.disabled = true; closeSheet(); await markResult(t.dataset.ids.split(","), "done", mk);
     }
@@ -1162,9 +1167,11 @@ document.addEventListener("click", async e => {
 });
 // 「今週の割り振り」を開いたかどうかを覚えておく（描き直しても閉じないように）
 document.addEventListener("toggle", e => { if (e.target.classList && e.target.classList.contains("bal")) S.balOpen = e.target.open; }, true);
+const ageHint = el => { const w = el.parentElement.querySelector(".agewarn"), ng = kentei1AgeNg(el.dataset.birth, el.value); if (w) w.innerHTML = ng ? `<p style="color:var(--lv3);font-size:13px;font-weight:700;margin:6px 0 0">⚠ ${esc(ng)}</p>` : ""; if (ng) toast(ng); };
 // みきわめのフォーム：合格の時だけ検定日を出す。「未確定」なら日付は入れない
 document.addEventListener("change", e => {
   if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";
+  if (e.target.dataset && e.target.dataset.birth) ageHint(e.target);
   if (e.target.id === "gk_chk") document.getElementById("gk_ok").disabled = !e.target.checked;
   if (e.target.id === "kf_und") { const d = document.getElementById("kf_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
   if (e.target.id === "mk_und") { const d = document.getElementById("mk_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }

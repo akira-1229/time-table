@@ -119,6 +119,14 @@ export function ageOf(birth, on = today()) {
   if (on.getDate() < b.getDate()) m--;
   return m < 0 ? null : { y: Math.floor(m / 12), m: m % 12, months: m };
 }
+// 第1段階の検定日が18歳の誕生日より前なら、警告の文を返す（誕生日当日は受けられる。2月29日生まれは平年は3月1日）
+export function kentei1AgeNg(birth, date) {
+  const n = CFG.kentei1MinAge || 18;
+  if (!birth || !date) return "";
+  const y = +birth.slice(0, 4) + n, leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const bd = birth.slice(5) === "02-29" && !leap ? `${y}-03-01` : `${y}${birth.slice(4)}`;
+  return date < bd ? `検定日（${md(date)}）は${n}歳の誕生日（${y}年${md(bd)}）より前です。${n}歳になる前は第1段階の検定を受けられません。` : "";
+}
 export const ageText = birth => { const a = ageOf(birth); return a ? `${a.y}歳${a.m}ヶ月` : ""; };
 
 // 仮免期限日：交付日の「○ヶ月後の同じ日」の前日（同じ日が無い月はその月の末日）

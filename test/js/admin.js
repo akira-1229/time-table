@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -281,7 +281,7 @@ function mkFields(s) {
   const m = !S.isAdmin && s.token && mikiwameOf(s);
   if (!m) return "";
   if (!m.passed) return `<p style="font-size:13px;margin:0 0 10px">みきわめ（第${s.stage}段階）：<b>不合格</b>（${esc(m.date || "")}）。次の教習の「実施」で、もう一度みきわめを記録します。</p>`;
-  return `<div class="row"><div class="field"><label for="f_kentei">検定日（みきわめ合格 ${esc(m.date || "")}）</label><input id="f_kentei" type="date" value="${esc(m.kenteiDate || "")}"></div>
+  return `<div class="row"><div class="field"><label for="f_kentei">検定日（みきわめ合格 ${esc(m.date || "")}）</label><input id="f_kentei" type="date" value="${esc(m.kenteiDate || "")}"${s.stage === 1 ? ' data-st1="1"' : ""}><div class="agewarn"></div></div>
   <div class="field"><label for="f_gakka">学科及び効果測定</label><select id="f_gakka"><option value="1" ${m.gakkaDone ? "selected" : ""}>終わっている</option><option value="0" ${m.gakkaDone ? "" : "selected"}>終わっていない</option></select></div></div>
   <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">検定日を空にすると「未確定」になります。</p>`;
 }
@@ -464,6 +464,13 @@ document.addEventListener("change", async e => {
   if (!uid || !confirm(`${s.name}さんの担当を${iname(uid)}さんに変えます。すでに入っている予約は、前の担当のまま残ります。よろしいですか？`)) { render(); return; }
   try { await updateDoc(doc(db, "students", s.token), { instructorUid: uid }); await loadAll(); toast("担当を変えました"); } catch (err) { toast(friendlyError(err)); }
 });
+// 第1段階の検定日：18歳の誕生日より前ならすぐ警告する（高校生。誕生日当日は可。依頼者指定）
+document.addEventListener("change", e => {
+  if (e.target.id !== "f_kentei" || !e.target.dataset.st1) return;
+  const b = document.getElementById("f_birthDate"), ng = kentei1AgeNg(b && b.dataset.iso, e.target.value), w = e.target.parentElement.querySelector(".agewarn");
+  if (w) w.innerHTML = ng ? `<p style="color:var(--lv3);font-size:13px;font-weight:700;margin:6px 0 0">⚠ ${esc(ng)}</p>` : "";
+  if (ng) toast(ng);
+});
 document.addEventListener("change", e => {
   if (e.target.dataset.act === "selPage") { filtered().forEach(s => e.target.checked ? S.sel.add(s.token) : S.sel.delete(s.token)); render(); return; }
   if (e.target.dataset.act === "sel") { const k = e.target.dataset.s; e.target.checked ? S.sel.add(k) : S.sel.delete(k); render(); } });
@@ -529,6 +536,8 @@ document.addEventListener("click", async e => {
       const kd = document.getElementById("f_kentei");
       if (old && kd && old.stage === data.stage) {
         const m = mikiwameOf(old);
+        const ng = old.stage === 1 && kentei1AgeNg(data.birthDate, kd.value);
+        if (ng && kd.value !== (m.kenteiDate || "") && !confirm(`${ng}\n\nこのまま保存しますか？`)) return;
         data[`mikiwame${old.stage}`] = { ...m, kenteiDate: kd.value || null, kenteiUndecided: !kd.value, gakkaDone: document.getElementById("f_gakka").value === "1" };
       }
       t.disabled = true;
