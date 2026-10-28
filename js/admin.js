@@ -130,8 +130,10 @@ function progressBar(s) {
     const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
     const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
     // 次の教習が決まっていれば、今の位置のマスの下に「↑ 日付」（依頼者指定）。右半分なら右寄せにしてはみ出さないようにする
-    const nx = cur >= 0 && S.next && S.next[s.token];
-    const next = nx ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${longDate(nx.date)} ${nx.period}限 ↑</span>` : `<span>↑ ${longDate(nx.date)} ${nx.period}限</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
+    // 決まっていなければ「↑ 未定」
+    const nx = cur >= 0 && !S.isAdmin && S.next ? S.next[s.token] || "未定" : null;
+    const nt = nx === "未定" ? "未定" : nx && `${longDate(nx.date)} ${nx.period}限`;
+    const next = nx ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${nt} ↑</span>` : `<span>↑ ${nt}</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
     return top + bar + next + (bottom ? `<div class="pglab">${bottom}</div>` : "");
   };
   return `<div class="pg" role="img" aria-label="第${s.stage}段階 ${done}/${lessonMin(s.stage, s)}時限">${row(1)}${row(2)}</div>`;
