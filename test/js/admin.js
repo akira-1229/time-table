@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, progressBarHtml, longDate, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -109,35 +109,9 @@ const sortList = list => {
 const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
 // 期限が近い・過ぎた日付は赤で出す
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(longDate(s[k]))}</span>` : ""; };
-// 進み具合の横棒グラフ（依頼者指定）：1段目が第1段階（青）、2段目が第2段階（緑）。1マス＝1時限で、受けた分を塗り、次の教習のマスに枠。
-// 最低時限を超えた分（延長）はオレンジ。段階の右端に検定の旗（合格＝塗り、検定日が決まっている＝色付きの枠、まだ＝灰色）。
-// 最低時限の最後のマス（みきわめの教習）は幅を広げて「みきわめ」と書く（依頼者指定）。
-// 上に「第1段階 8/12」と検定日、下に開始・仮免期限・教習期限。日付は「○年○月○日」
-const longDate = d => d ? `${+d.slice(0, 4)}年${+d.slice(5, 7)}月${+d.slice(8, 10)}日` : "";
-const FLAG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="pole" d="M4 2v16"/><path class="cloth" d="M4.5 3h11l-2.5 3.5 2.5 3.5h-11z"/><path class="chk" d="M7 6.5l1.8 1.8 3.4-3.4"/></svg>';
-function progressBar(s) {
-  const grad = !!s.graduatedOn, done = doneOf(s), exp = k => expiriesOf(s).some(x => x.key === k);
-  const dt = (label, d, warn) => d ? `<span class="pgd${warn ? " ng" : ""}">${label} ${longDate(d)}</span>` : "";
-  const row = n => {
-    const min = lessonMin(n, s), mk = s[`mikiwame${n}`];
-    const d = s.stage > n || grad ? Math.max(min, n === s.stage ? done : 0) : s.stage === n ? done : 0;
-    const passed = s.stage > n || grad || !!(mk && mk.kenteiResult === "pass");
-    const cells = Math.max(min, s.stage === n && !passed ? d + (d >= min ? 1 : 0) : d), cur = s.stage === n && !passed ? d : -1;
-    // 検定日（指導員だけ。管理画面には出さない）：みきわめ合格の検定日、なければ決まっている検定日（予定）
-    const kd = S.isAdmin ? "" : mk && mk.passed ? mk.kenteiDate || "未定" : s[`kenteiPlan${n}`] || "";
-    const name = n === 1 ? "修了検定" : "卒業検定", state = passed ? "pass" : kd && kd !== "未定" ? "set" : "";
-    const top = `<div class="pgtop"><b class="t${n}">第${n}段階 ${d}/${min}</b><span class="pgd">${passed ? `${name} 合格` : kd === "未定" ? `${name} 未定` : kd ? `${name} ${longDate(kd)}` : ""}</span></div>`;
-    const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
-    const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
-    // 次の教習が決まっていれば、今の位置のマスの下に「↑ 日付」（依頼者指定）。右半分なら右寄せにしてはみ出さないようにする
-    // 決まっていなければ「↑ 未定」
-    const nx = cur >= 0 && !S.isAdmin && S.next ? S.next[s.token] || "未定" : null;
-    const nt = nx === "未定" ? "未定" : nx && `${longDate(nx.date)} ${nx.period}限`;
-    const next = nx ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${nt} ↑</span>` : `<span>↑ ${nt}</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
-    return top + bar + next + (bottom ? `<div class="pglab">${bottom}</div>` : "");
-  };
-  return `<div class="pg" role="img" aria-label="第${s.stage}段階 ${done}/${lessonMin(s.stage, s)}時限">${row(1)}${row(2)}</div>`;
-}
+// 進み具合の横棒グラフ（common.js の progressBarHtml。教習生の画面と共通）。検定日は指導員だけ（予定も）、
+// 次の教習（確定済み）は指導員の画面だけ「↑ 日付」、決まっていなければ「↑ 未定」（依頼者指定）
+const progressBar = s => progressBarHtml(s, S.isAdmin ? {} : { kentei: "staff", next: S.next && S.next[s.token] ? `${longDate(S.next[s.token].date)} ${S.next[s.token].period}限` : "未定" });
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "access" ? `<h2>アクセス記録</h2><div style="max-width:760px">${renderAccess()}</div>` : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();

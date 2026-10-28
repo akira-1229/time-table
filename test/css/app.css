@@ -381,6 +381,8 @@ th.tday small{color:var(--today)!important;font-weight:700}
 .pgseg i.x.f{background:var(--orange)}
 .pgseg i.mk{flex:0 0 auto;width:44px;font-style:normal;font-size:9.5px;font-weight:700;line-height:14px;text-align:center;letter-spacing:-.04em;white-space:nowrap;overflow:hidden;color:var(--blue)}
 .pgseg i.c2.mk{color:var(--green)}.pgseg i.mk.f{color:#fff}
+.pgseg i.b{background:repeating-linear-gradient(135deg,var(--blue-soft) 0 3px,color-mix(in srgb,var(--blue) 45%,transparent) 3px 5px)}
+.pgseg i.c2.b{background:repeating-linear-gradient(135deg,var(--green-soft) 0 3px,color-mix(in srgb,var(--green) 45%,transparent) 3px 5px)}
 .pgseg i.cur{outline:2px solid var(--today);outline-offset:1px;position:relative;z-index:1}
 .pgnext{margin-top:1px}
 .pgnext .pgseg i{height:14px;background:none;border:0;position:relative;overflow:visible;font-style:normal}
@@ -406,3 +408,18 @@ th.tday small{color:var(--today)!important;font-weight:700}
 body.pc .adm td .pg{width:320px;white-space:normal}
 /* PCの教習生の表：横に長いので、編集ボタンの列を右端に固定する */
 body.pc .adm tr>td:last-child,body.pc .adm tr>th:last-child{position:sticky;right:0;background:var(--surface);box-shadow:-6px 0 6px -6px rgba(0,0,0,.25)}
+/* 教習生の画面：進み具合のグラフを大きく */
+.pg.big .pgtop{font-size:13px;margin-top:8px}.pg.big .pgtop b{font-size:15px}
+.pg.big .pgseg{gap:2px}.pg.big .pgseg i{height:24px;border-radius:4px}
+.pg.big .pgseg i.mk{width:64px;font-size:12px;line-height:22px}
+.pg.big .pgflag,.pg.big .pgflag svg{width:28px;height:28px}
+.pg.big .pgnext .pgseg i{height:18px}.pg.big .pgnext .pgseg i span{font-size:13px;line-height:18px}.pg.big .pgnext .pgflag{height:18px}
+.pg.big .pglab{font-size:12.5px;padding-right:32px}
+.pglegend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:10px;font-size:12px;color:var(--muted)}
+.pglegend span{display:inline-flex;align-items:center;gap:4px}
+.pglegend i{display:inline-block;width:14px;height:14px;border-radius:3px;box-sizing:border-box;background:var(--blue-soft);border:1px solid var(--line)}
+.pglegend i.c1.f{background:var(--blue);border-color:var(--blue)}.pglegend i.c2.f{background:var(--green);border-color:var(--green)}
+.pglegend i.c1.b{background:repeating-linear-gradient(135deg,var(--blue-soft) 0 3px,color-mix(in srgb,var(--blue) 45%,transparent) 3px 5px)}
+.pglegend i.c2.b{background:repeating-linear-gradient(135deg,var(--green-soft) 0 3px,color-mix(in srgb,var(--green) 45%,transparent) 3px 5px)}
+.pglegend i.cur{background:none;border:2px solid var(--today)}
+.pglegend i.x{background:var(--orange);border-color:var(--orange)}

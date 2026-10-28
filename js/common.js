@@ -476,3 +476,34 @@ export function noticeHistoryHtml(scope) {
 }
 // お知らせの1行（種類の札＋内容）
 export const noticeRow = (tag, text, cls = "") => `<span class="ntag ${cls}">${tag}</span><span class="ntext">${text}</span>`;
+
+// ---------- 進み具合の横棒グラフ（指導員の「教習生の管理」と教習生の画面で共通。依頼者指定） ----------
+// 1段目が第1段階（青）、2段目が第2段階（緑）。1マス＝1時限で、受けた分を塗り、予約済みの分は斜線、次の教習のマスに枠。
+// 最低時限を超えた分（延長）はオレンジ。最低時限の最後のマスは幅を広げて「みきわめ」と書く。
+// 段階の右端に検定の旗（合格＝塗り、検定日が決まっている＝色付きの枠、まだ＝灰色）。上に「第1段階 8/12」と検定日、
+// 下に開始・仮免期限・教習期限。日付は「○年○月○日」
+// o.kentei："staff"（検定日と予定の検定日を出す）／"student"（みきわめ合格の検定日だけ）／なし（出さない。管理画面）
+// o.next：次の教習の文（例「2026年11月4日 5限」「未定」）。今の位置のマスの下に「↑」で出す。o.booked：予約済みの時限数。o.big：大きく
+export const longDate = d => d ? `${+d.slice(0, 4)}年${+d.slice(5, 7)}月${+d.slice(8, 10)}日` : "";
+const FLAG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="pole" d="M4 2v16"/><path class="cloth" d="M4.5 3h11l-2.5 3.5 2.5 3.5h-11z"/><path class="chk" d="M7 6.5l1.8 1.8 3.4-3.4"/></svg>';
+export function progressBarHtml(s, o = {}) {
+  const grad = !!s.graduatedOn, done = doneOf(s), exp = k => expiriesOf(s).some(x => x.key === k);
+  const dt = (label, d, warn) => d ? `<span class="pgd${warn ? " ng" : ""}">${label} ${longDate(d)}</span>` : "";
+  const row = n => {
+    const min = lessonMin(n, s), mk = s[`mikiwame${n}`];
+    const d = s.stage > n || grad ? Math.max(min, n === s.stage ? done : 0) : s.stage === n ? done : 0;
+    const passed = s.stage > n || grad || !!(mk && mk.kenteiResult === "pass");
+    const bk = s.stage === n && !passed ? o.booked || 0 : 0;
+    const cells = Math.max(min, s.stage === n && !passed ? d + bk + (d + bk >= min ? 1 : 0) : d), cur = s.stage === n && !passed ? d : -1;
+    const kd = !o.kentei ? "" : mk && mk.passed ? mk.kenteiDate || "未定" : o.kentei === "staff" ? s[`kenteiPlan${n}`] || "" : "";
+    const name = n === 1 ? "修了検定" : "卒業検定", state = passed ? "pass" : kd && kd !== "未定" ? "set" : "";
+    const top = `<div class="pgtop"><b class="t${n}">第${n}段階 ${d}/${min}</b><span class="pgd">${passed ? `${name} 合格` : kd === "未定" ? `${name} 未定` : kd ? `${name} ${longDate(kd)}` : ""}</span></div>`;
+    const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : i < d + bk ? " b" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
+    const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
+    // 次の教習：今の位置のマスの下に「↑ 日付」（右半分なら右寄せにしてはみ出さないようにする）
+    const nt = cur >= 0 && o.next;
+    const next = nt ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${nt} ↑</span>` : `<span>↑ ${nt}</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
+    return top + bar + next + (bottom ? `<div class="pglab">${bottom}</div>` : "");
+  };
+  return `<div class="pg${o.big ? " big" : ""}" role="img" aria-label="第${s.stage}段階 ${done}/${lessonMin(s.stage, s)}時限">${row(1)}${row(2)}</div>`;
+}

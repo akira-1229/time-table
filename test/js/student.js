@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml
+  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, progressBarHtml, longDate
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -238,11 +238,12 @@ function renderBook() {
   const absent = S.bookings.filter(b => b.result === "absent").sort((a, b) => b.date.localeCompare(a.date) || a.period - b.period);
   let h = "";
   if (min) {
-    const pct = Math.min(100, Math.round(done / min * 100));
-    h += `<div class="prog"><div style="font-size:13px;color:var(--muted)">第${st.stage}段階の進み具合</div>
-      <div><b style="font-size:22px">${done}</b> / ${min}時限<span style="font-size:12px;color:var(--muted)">（最低教習時限）</span></div>
-      <div class="bar"><i class="${done > min ? "over" : ""}" style="width:${pct}%"></i></div>
-      <div style="font-size:12px;color:var(--muted)">受講済み ${done}時限${plan.items.length ? `・予約済み ${plan.total - done}時限` : ""}${done >= min ? "・最低教習時限に達しました" : `・あと${min - done}時限`}</div></div>`;
+    // 進み具合の横棒グラフ（指導員の「教習生の管理」と同じもの。依頼者指定）。予約済みの分は斜線、次の教習の日付を「↑」で
+    const nx = nextLesson(), booked = plan.items.length ? plan.total - done : 0;
+    h += `<div class="prog"><div style="font-size:13px;color:var(--muted);margin-bottom:2px">教習の進み具合（1マス＝1時限）</div>
+      ${progressBarHtml(st, { big: true, kentei: "student", booked, next: nx ? `${longDate(nx.date)} ${nx.ps.join("・")}限` : "未定" })}
+      <div class="pglegend"><span><i class="c${st.stage} f"></i>受けた教習</span><span><i class="c${st.stage} b"></i>予約済み</span><span><i class="cur"></i>次の教習</span><span><i class="x"></i>延長</span></div>
+      <div style="font-size:13px;margin-top:6px">第${st.stage}段階：受講済み <b>${done}</b>時限${booked ? `・予約済み ${booked}時限` : ""}${done >= min ? "・最低教習時限に達しました" : `・最低教習時限まであと<b>${min - done}</b>時限`}</div></div>`;
   }
   const mk = mikiwameOf(st);
   if (mk && mk.passed && !kenteiOn(st) && !(mk.kenteiDate && mk.kenteiDate < t0))
