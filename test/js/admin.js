@@ -316,7 +316,7 @@ function editSheet(s) {
   ${mkFields(s)}
   ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage, s)}時限）。段階を変えると、時限数は0から数え直します。危険予測・高速教習を受けたかは、第2段階の時限数から自動で決まります。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
-  ${isNew ? "" : `${MODE === "staff" ? `<button class="btn full" data-act="availEdit" data-s="${s.token}">空き時間を入力する（今日から1ヶ月）</button>` : ""}<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
+  ${isNew ? "" : `${MODE === "staff" ? availBtn(s) : ""}<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
@@ -386,13 +386,24 @@ async function deleteStudent(tok) {
 }
 
 // 教習生がアプリを使い始める前に、指導員が空き時間（◯）を代わりに入れる（依頼者指定）。
-// 入れられるのは今日から1ヶ月だけ（それより先の日は押せない）。押すたびにすぐ保存する（確認なし）
+// 入れられるのは教習生を登録した日から1ヶ月だけ（過ぎた日は押せない。1ヶ月を過ぎたらボタンも押せない）。押すたびにすぐ保存する（確認なし）
 const AV = { s: null, days: [], m: {} };
+function availDays(s) {
+  const base = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate() : s.startDate ? parseDate(s.startDate) : null;
+  if (!base) return { days: [] };
+  const b = new Date(base.getFullYear(), base.getMonth(), base.getDate()), end = new Date(b.getFullYear(), b.getMonth() + 1, b.getDate()), t0 = today();
+  const days = []; for (let d = t0 > b ? t0 : b; d < end; d = addDays(d, 1)) days.push(dateStr(d));
+  return { days, last: dateStr(addDays(end, -1)) };
+}
+function availBtn(s) {
+  const a = availDays(s);
+  return a.days.length ? `<button class="btn full" data-act="availEdit" data-s="${s.token}">空き時間を入力する（登録から1ヶ月・${+a.last.slice(5, 7)}月${+a.last.slice(8)}日まで）</button>`
+    : `<button class="btn full" disabled>空き時間を入力する（登録から1ヶ月を過ぎたため使えません）</button>`;
+}
 const avOn = (d, p) => !!(AV.m[d.slice(0, 7)] && AV.m[d.slice(0, 7)].slots.has(slotKey(+d.slice(8), p)));
 async function availSheet(s) {
-  const t0 = today(), end = new Date(t0.getFullYear(), t0.getMonth() + 1, t0.getDate());
-  AV.s = s; AV.days = []; AV.m = {};
-  for (let d = t0; d < end; d = addDays(d, 1)) AV.days.push(dateStr(d));
+  AV.s = s; AV.days = availDays(s).days; AV.m = {};
+  if (!AV.days.length) return toast("登録から1ヶ月を過ぎたため、空き時間は入れられません");
   for (const ym of [...new Set(AV.days.map(d => d.slice(0, 7)))]) {
     const r = await getDoc(doc(db, "students", s.token, "months", ym));
     AV.m[ym] = { slots: new Set(r.exists() ? r.data().slots || [] : []), late: !!(r.exists() && r.data().late) };
@@ -402,7 +413,7 @@ async function availSheet(s) {
 function drawAvail() {
   const s = AV.s, ds = AV.days, n = ds.reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(p => avOn(d, p)).length, 0);
   let h = `<h3>${esc(s.name)}さんの空き時間</h3>
-  <p style="font-size:13px;margin:0 0 8px">教習生の代わりに、予約を入れてよい時間に◯を付けます。押すとすぐに保存されます。入れられるのは<b>今日から1ヶ月（${ds[0].slice(5).replace("-", "/")}〜${ds[ds.length - 1].slice(5).replace("-", "/")}）</b>だけです。</p>
+  <p style="font-size:13px;margin:0 0 8px">教習生の代わりに、予約を入れてよい時間に◯を付けます。押すとすぐに保存されます。入れられるのは<b>登録した日から1ヶ月（${ds[0].slice(5).replace("-", "/")}〜${ds[ds.length - 1].slice(5).replace("-", "/")}）</b>だけです。</p>
   <div class="gridwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   ds.forEach(d => { const w = new Date(d + "T00:00:00").getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<small>${WD[w]}</small></th>`; });
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
@@ -421,7 +432,7 @@ function drawAvail() {
 }
 async function availToggle(t) {
   const d = t.dataset.d, ps = t.dataset.act === "avDay" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [+t.dataset.p];
-  if (!AV.days.includes(d)) return toast("今日から1ヶ月より先の日は入れられません");
+  if (!AV.days.includes(d)) return toast("登録から1ヶ月を過ぎた日は入れられません");
   const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? t.checked : !avOn(d, ps[0]);
   ps.forEach(p => on ? set.add(slotKey(+d.slice(8), p)) : set.delete(slotKey(+d.slice(8), p)));
   drawAvail();
