@@ -99,6 +99,7 @@ const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(longDate(s[k]))}</span>` : ""; };
 // 進み具合の横棒グラフ（依頼者指定）：1段目が第1段階（青）、2段目が第2段階（緑）。1マス＝1時限で、受けた分を塗り、次の教習のマスに枠。
 // 最低時限を超えた分（延長）はオレンジ。段階の右端に検定の旗（合格＝塗り、検定日が決まっている＝色付きの枠、まだ＝灰色）。
+// 最低時限の最後のマス（みきわめの教習）は幅を広げて「みきわめ」と書く（依頼者指定）。
 // 上に「第1段階 8/12」と検定日、下に開始・仮免期限・教習期限。日付は「○年○月○日」
 const longDate = d => d ? `${+d.slice(0, 4)}年${+d.slice(5, 7)}月${+d.slice(8, 10)}日` : "";
 const FLAG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="pole" d="M4 2v16"/><path class="cloth" d="M4.5 3h11l-2.5 3.5 2.5 3.5h-11z"/><path class="chk" d="M7 6.5l1.8 1.8 3.4-3.4"/></svg>';
@@ -114,7 +115,7 @@ function progressBar(s) {
     const kd = S.isAdmin ? "" : mk && mk.passed ? mk.kenteiDate || "未定" : s[`kenteiPlan${n}`] || "";
     const name = n === 1 ? "修了検定" : "卒業検定", state = passed ? "pass" : kd && kd !== "未定" ? "set" : "";
     const top = `<div class="pgtop"><b class="t${n}">第${n}段階 ${d}/${min}</b><span class="pgd">${passed ? `${name} 合格` : kd === "未定" ? `${name} 未定` : kd ? `${name} ${longDate(kd)}` : ""}</span></div>`;
-    const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}"></i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
+    const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
     const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
     return top + bar + (bottom ? `<div class="pglab">${bottom}</div>` : "");
   };
