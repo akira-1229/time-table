@@ -264,6 +264,12 @@ function warekiToIso(digits, kind) {
   const dist = c => Math.abs(new Date(c) - new Date(t));
   return cands.slice().sort((a, b) => dist(a) - dist(b))[0];
 }
+// 西暦（YYYY-MM-DD）を和暦6桁に戻す（日付の欄を押した時、そのまま直せるように）
+function isoToWareki(iso) {
+  if (!iso) return "";
+  const Y = +iso.slice(0, 4), base = iso >= "2019-05-01" ? 2018 : iso >= "1989-01-08" ? 1988 : 1925;
+  return `${p2(Y - base)}${iso.slice(5, 7)}${iso.slice(8, 10)}`;
+}
 const wdateText = iso => iso ? `${+iso.slice(0, 4)}年${+iso.slice(5, 7)}月${+iso.slice(8, 10)}日` : "";
 const wdateInput = (k, iso) => `<input id="f_${k}" class="wdate" data-k="${k}" data-iso="${esc(iso || "")}" value="${esc(wdateText(iso))}" inputmode="numeric" autocomplete="off" placeholder="和暦6桁（例：190622）">`;
 // 自動で入れた日付の欄（教習開始日→学科開始日・教習期限日、仮免交付日→仮免期限日）
@@ -293,7 +299,7 @@ function editSheet(s) {
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><select id="f_lic">${opt("", s.license || "", "選んでください")}${[...new Set([...(CFG.licenseTypes || []), ...(s.license ? [s.license] : [])])].map(x => opt(x, s.license || "")).join("")}</select></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
   <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : k === "classStart" || k === "deadline" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（教習開始日から自動）</span>` : k === "skillStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（最初の教習を実施にした日が自動で入ります）</span>` : ""}</label>${wdateInput(k, s[k])}</div>`).join("")}</div>
-  <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">日付は和暦の6桁で入れます（例：平成19年6月22日 → 190622）。6桁打つと西暦に変わって、次の欄に進みます。</p>
+  <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">日付は和暦の6桁で入れます（例：平成19年6月22日 → 190622）。6桁打つと西暦に変わって、次の欄に進みます。入っている日付を押すと6桁に戻るので、そのまま直せます。</p>
   <h3 style="margin-top:6px">教習の状況</h3>
   <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
   <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
@@ -398,28 +404,39 @@ function printCards() {
 }
 
 // 和暦6桁の欄：6桁（西暦なら8桁）そろったら西暦に直して、次の空いている日付の欄へ進む
-function wdateInputEv(el) {
-  // 6桁を超えたら、超えた分を新しく打ち直した日付として扱う（間違えた日付の後ろに続けて打った時）
-  const raw = toHalfDigits(el.value).replace(/\D/g, ""), digits = raw.length > 6 ? raw.slice(6, 12) : raw;
+function wdateInputEv(el, leaving) {
+  let digits = toHalfDigits(el.value).replace(/\D/g, ""), pos = null;
+  // 6桁入っている所へ打ち足した時：最後に打ち足したら打ち直し、途中なら上書き（すぐ後ろの1文字と入れ替え）
+  if (digits.length > 6) {
+    const c = el.selectionStart == null ? digits.length : toHalfDigits(el.value.slice(0, el.selectionStart)).replace(/\D/g, "").length;
+    if (c >= digits.length) digits = digits.slice(6);
+    else { digits = (digits.slice(0, c) + digits.slice(c + digits.length - 6)).slice(0, 6); pos = c; }
+  }
   el.dataset.touched = "1";
-  if (el.value !== digits) el.value = digits;
+  if (el.value !== digits) { el.value = digits; if (pos != null) try { el.setSelectionRange(pos, pos); } catch (x) { } }
   el.dataset.iso = ""; el.classList.remove("ng");
   if (digits.length < 6) return;
   const iso = warekiToIso(digits, el.dataset.k);
+  // 途中の数字を直している時は、続けて直せるように欄を離れるまで6桁のまま
+  if (!leaving && pos != null && pos < 6) { if (!iso) el.classList.add("ng"); return; }
   if (!iso) { el.classList.add("ng"); toast("日付が正しくありません（和暦6桁：例 190622）"); try { el.select(); } catch (x) { } return; }
   setWdate(el.dataset.k, iso);
   const k = el.dataset.k;
   if (k === "birthDate") { const a = document.getElementById("f_age"); if (a) a.textContent = `今日時点で ${ageText(iso)}`; }
   if (k === "startDate") { setWdate("classStart", iso); setWdate("deadline", karimenExpiryOf(iso, CFG.deadlineMonths || 9)); }
   if (k === "karimenIssued") { setWdate("karimenExpiry", karimenExpiryOf(iso)); const st = document.getElementById("f_st"); if (st) st.value = "2"; }
+  if (leaving) return;
   const all = [...document.querySelectorAll(".wdate")], next = all.slice(all.indexOf(el) + 1).find(x => !x.dataset.iso);
   if (next) next.focus(); else el.blur();
 }
-// 日付の欄を押したら、いったん空にして打ち直せるようにする。何も打たずに離れたら元の日付に戻す
-document.addEventListener("focusin", e => { const el = e.target; if (el.classList && el.classList.contains("wdate")) { el.dataset.touched = ""; if (el.dataset.iso) el.value = ""; } });
+// 日付の欄を押したら、入っている日付を和暦6桁に戻して、そのまま直せるようにする（依頼者指定）。何も変えずに離れたら元の表示に戻す
+document.addEventListener("focusin", e => { const el = e.target; if (el.classList && el.classList.contains("wdate")) { el.dataset.touched = ""; if (el.dataset.iso) el.value = isoToWareki(el.dataset.iso); } });
 document.addEventListener("focusout", e => {
   const el = e.target;
-  if (el.classList && el.classList.contains("wdate") && !el.dataset.touched && el.dataset.iso && !el.value) el.value = wdateText(el.dataset.iso);
+  if (el.classList && el.classList.contains("wdate")) {
+    if (!el.dataset.touched && el.dataset.iso) el.value = wdateText(el.dataset.iso);
+    else if (el.dataset.touched && !el.dataset.iso && /^\d{6}$/.test(el.value)) wdateInputEv(el, true);
+  }
   if (e.target.id === "f_no" && e.target.value && e.target.value.length < 4) e.target.value = e.target.value.padStart(4, "0");
 });
 // 名前（漢字）を打つ時の読み（ひらがな）を拾って、フリガナに入れる（手で直したフリガナは上書きしない）
