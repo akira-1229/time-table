@@ -97,6 +97,26 @@ const sortList = list => {
 const mkText = s => { const m = !S.isAdmin && mikiwameOf(s); return !m ? "" : !m.passed ? "みきわめ不合格" : `合格・検定 ${kenteiText(m)}${m.gakkaDone ? "" : "（学科・効果測定まだ）"}`; };
 // 期限が近い・過ぎた日付は赤で出す
 const dateCell = (s, k) => { const e = expiriesOf(s).find(x => x.key === k); return s[k] ? `<span style="${e ? "color:var(--lv3);font-weight:700" : ""}" title="${e ? esc(expiryText(e)) : ""}">${esc(s[k])}</span>` : ""; };
+// 進み具合の横棒グラフ（依頼者指定）：第1段階・第2段階を色分けしたマス（1マス＝1時限）、受けた分を塗り、次の教習に枠。
+// 最低時限を超えた分（延長）はオレンジ。下に段階ごとの時限数と、検定日・仮免期限・教習期限などの日付を小さく出す
+const shortDate = d => { if (!d) return ""; const t = today(), Y = +d.slice(0, 4); return `${Y !== t.getFullYear() ? `${Y}/` : ""}${+d.slice(5, 7)}/${+d.slice(8)}`; };
+function progressBar(s) {
+  const m1 = lessonMin(1, s), m2 = lessonMin(2, s), grad = !!s.graduatedOn, done = doneOf(s);
+  const d1 = s.stage === 1 ? done : m1, d2 = s.stage === 2 ? (grad ? Math.max(done, m2) : done) : 0;
+  const n1 = Math.max(m1, s.stage === 1 ? d1 + (d1 >= m1 && !grad ? 1 : 0) : m1), n2 = Math.max(m2, s.stage === 2 ? d2 + (d2 >= m2 && !grad ? 1 : 0) : m2);
+  const cur = grad ? -1 : s.stage === 1 ? d1 : n1 + d2;   // 次に受ける時限のマス（0から数える）
+  const exp = k => expiriesOf(s).some(x => x.key === k);
+  const dt = (label, d, warn, end) => d ? `<span class="pgd${warn ? " ng" : ""}${end ? " end" : ""}">${label} ${shortDate(d)}</span>` : "";
+  const k1 = !S.isAdmin && s.mikiwame1 && s.mikiwame1.passed ? s.mikiwame1.kenteiDate || "未定" : !S.isAdmin && s.kenteiPlan1 || "";
+  const k2 = !S.isAdmin && s.mikiwame2 && s.mikiwame2.passed ? s.mikiwame2.kenteiDate || "未定" : !S.isAdmin && s.kenteiPlan2 || "";
+  const kd = (label, v) => !v ? "" : v === "未定" ? `<span class="pgd">${label} 未定</span>` : dt(label, v);
+  const cells = (n, min, filled, off, cls) => Array.from({ length: n }, (_, i) => `<i class="${cls}${i < filled ? " f" : ""}${i >= min ? " x" : ""}${off + i === cur ? " cur" : ""}"></i>`).join("");
+  return `<div class="pg" role="img" aria-label="第${s.stage}段階 ${done}/${lessonMin(s.stage, s)}時限">
+    <div class="pgbar"><div class="pgseg" style="flex:${n1}">${cells(n1, m1, d1, 0, "c1")}</div><div class="pgseg" style="flex:${n2}">${cells(n2, m2, d2, n1, "c2")}</div></div>
+    <div class="pgbar pglab"><div style="flex:${n1}"><b class="t1">第1段階 ${d1}/${m1}</b>${kd("修了検定", k1)}</div><div style="flex:${n2}"><b class="t2">第2段階 ${d2}/${m2}</b>${kd("卒業検定", k2)}</div></div>
+    <div class="pgbar pglab"><div style="flex:${n1}">${dt("開始", s.startDate)}</div><div style="flex:${n2}">${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline"), true)}</div></div>
+  </div>`;
+}
 // PC表示：左にメニュー、右に全項目の表（見出しで並べ替え）。編集は右からパネルで開く
 function renderPC() {
   const main = S.tab === "instructors" ? renderInstructorsPC() : S.tab === "access" ? `<h2>アクセス記録</h2><div style="max-width:760px">${renderAccess()}</div>` : S.tab === "settings" ? `<h2>設定</h2>${renderSettings().replace('<div class="list">', '<div class="list pcgrid">')}` : renderStudentsPC();
@@ -114,7 +134,7 @@ function renderStudentsPC() {
     { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
     { k: "birthDate", t: "生年月日" }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
-    { k: "done", t: "進み具合", v: s => `${doneOf(s)}/${lessonMin(s.stage, s)}`, sort: s => doneOf(s) / (lessonMin(s.stage, s) || 1) },
+    { k: "done", t: "進み具合", html: progressBar, sort: s => (s.stage === 2 ? 100 : 0) + doneOf(s) },
     ...(S.isAdmin ? [] : [{ k: "kentei", t: "みきわめ・検定日", v: mkText, sort: s => distOf(kenteiOf(s)) }]),
     { k: "startDate", t: "教習開始", sort: s => distOf(s.startDate) }, { k: "classStart", t: "学科開始" }, { k: "skillStart", t: "技能開始" }, { k: "deadline", t: "教習期限", html: s => dateCell(s, "deadline") },
     { k: "karimenIssued", t: "仮免交付" }, { k: "karimenExpiry", t: "仮免期限", html: s => dateCell(s, "karimenExpiry") },
@@ -135,11 +155,16 @@ function renderStudents() {
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
   <div class="row" style="margin-top:10px"><div class="field"><label for="flt">絞り込み（名前・番号${S.isAdmin ? "・担当" : ""}）</label><input id="flt" value="${esc(S.filter)}"></div>
   <div class="field"><label for="msort">並べ替え</label><select id="msort">${SORTS.filter(x => !(x[4] && S.isAdmin)).map(([k, t]) => `<option value="${k}" ${S.msort === k ? "selected" : ""}>${t}</option>`).join("")}</select></div></div>
-  <div class="gridwrap"><table class="adm"><thead><tr><th></th><th>番号</th><th>名前</th><th>段階</th><th>希望免許</th><th>進み具合</th><th>教習期限</th><th>仮免期限</th><th>状態</th>${S.isAdmin ? "<th>担当</th>" : ""}<th></th></tr></thead><tbody>`;
+  <div class="scards">`;
+  // スマホ：1人1枚のカード（横にずらさなくても編集ボタンが見えるように。依頼者指定）。進み具合は横棒グラフ
   list.forEach(s => {
-    h += `<tr><td><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択"></td><td>${esc(s.studentNo)}</td><td>${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small></td><td>${s.stage}</td><td>${esc(s.license || "")}</td><td>${doneOf(s)}/${lessonMin(s.stage, s)}${mkText(s) ? `<br><small style="color:var(--muted)">${esc(mkText(s))}</small>` : ""}</td><td>${dateCell(s, "deadline")}</td><td>${dateCell(s, "karimenExpiry")}</td><td>${s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : '<span class="tag ok">利用中</span>'}</td>${S.isAdmin ? `<td>${assignSelect(s)}</td>` : ""}<td><button class="btn" data-act="edit" data-s="${s.token}">編集</button></td></tr>`;
+    const st = s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : "";
+    h += `<div class="scard"><div class="sc-top"><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">
+      <div class="sc-name"><b>${esc(s.name)}</b> <small>${esc(s.nameKana || "")}</small><br><small>${esc(s.studentNo || "番号なし")}・第${s.stage}段階${s.license ? `・${esc(s.license)}` : ""}</small>${st ? ` ${st}` : ""}</div>
+      <button class="btn" data-act="edit" data-s="${s.token}">編集</button></div>
+      ${progressBar(s)}${mkText(s) ? `<div class="sc-mk">${esc(mkText(s))}</div>` : ""}${S.isAdmin ? `<div class="sc-mk">担当：${assignSelect(s)}</div>` : ""}</div>`;
   });
-  h += `</tbody></table></div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
+  h += `</div>${list.length ? "" : '<div class="loading">教習生がいません</div>'}</div></section>`;
   h += `<div id="printArea"></div>`;
   return h;
 }
