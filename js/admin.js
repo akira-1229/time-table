@@ -5,7 +5,7 @@
 //   ログインは指導員の画面のものをそのまま使い、ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, serverTimestamp, writeBatch
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
 import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
@@ -64,6 +64,18 @@ async function loadAll() {
   const sq = S.isAdmin ? collection(db, "students") : query(collection(db, "students"), where("instructorUid", "==", S.uid));
   S.students = (await getDocs(sq)).docs.map(d => ({ token: d.id, ...d.data() }))
     .sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
+  // 次の教習（確定済み・まだチェックしていない・今日以降で一番早い予約）。進み具合のグラフに出す（指導員の画面だけ）
+  S.next = {};
+  if (!S.isAdmin) {
+    try {
+      const td = isoToday(), q = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("result", "==", null), where("status", "in", ["draft", "confirmed"]));
+      (await getDocs(q)).docs.forEach(d => {
+        const b = d.data(), tok = d.ref.parent.parent.id, cur = S.next[tok];
+        if (b.status !== "confirmed" || b.date < td) return;
+        if (!cur || b.date < cur.date || (b.date === cur.date && b.period < cur.period)) S.next[tok] = { date: b.date, period: b.period };
+      });
+    } catch (e) { }
+  }
   render();
 }
 
@@ -117,7 +129,10 @@ function progressBar(s) {
     const top = `<div class="pgtop"><b class="t${n}">第${n}段階 ${d}/${min}</b><span class="pgd">${passed ? `${name} 合格` : kd === "未定" ? `${name} 未定` : kd ? `${name} ${longDate(kd)}` : ""}</span></div>`;
     const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
     const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
-    return top + bar + (bottom ? `<div class="pglab">${bottom}</div>` : "");
+    // 次の教習が決まっていれば、今の位置のマスの下に「↑ 日付」（依頼者指定）。右半分なら右寄せにしてはみ出さないようにする
+    const nx = cur >= 0 && S.next && S.next[s.token];
+    const next = nx ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${longDate(nx.date)} ${nx.period}限 ↑</span>` : `<span>↑ ${longDate(nx.date)} ${nx.period}限</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
+    return top + bar + next + (bottom ? `<div class="pglab">${bottom}</div>` : "");
   };
   return `<div class="pg" role="img" aria-label="第${s.stage}段階 ${done}/${lessonMin(s.stage, s)}時限">${row(1)}${row(2)}</div>`;
 }

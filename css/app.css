@@ -382,6 +382,11 @@ th.tday small{color:var(--today)!important;font-weight:700}
 .pgseg i.mk{flex:0 0 auto;width:44px;font-style:normal;font-size:9.5px;font-weight:700;line-height:14px;text-align:center;letter-spacing:-.04em;white-space:nowrap;overflow:hidden;color:var(--blue)}
 .pgseg i.c2.mk{color:var(--green)}.pgseg i.mk.f{color:#fff}
 .pgseg i.cur{outline:2px solid var(--today);outline-offset:1px;position:relative;z-index:1}
+.pgnext{margin-top:1px}
+.pgnext .pgseg i{height:14px;background:none;border:0;position:relative;overflow:visible;font-style:normal}
+.pgnext .pgseg i span{position:absolute;top:0;left:50%;transform:translateX(-6px);white-space:nowrap;font-size:10.5px;font-weight:700;line-height:14px;color:var(--today)}
+.pgnext .pgseg i span.r{left:auto;right:50%;transform:translateX(6px)}
+.pgnext .pgflag{visibility:hidden;height:14px}
 .pgflag{flex:none;width:20px;height:20px;color:var(--line)}
 .pgflag svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .pgflag .chk{display:none;stroke:#fff;stroke-width:1.8}
