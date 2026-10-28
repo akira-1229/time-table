@@ -705,12 +705,12 @@ async function assign(tok, ds, p, gk, quiet) {
 }
 // この週の空いている枠に、ルールどおり自動で割り振る（未確定で入る。指導員が見て直してから確定する。依頼者と決めた考え方）
 //  ・この週の予約が少ない人から1人ずつ交代で（並んだら教習期限が近い人）。1人1週 autoAssign.weeklyMax 時限まで。日時の早い枠から
-//  ・その段階の最低時限まで入れたら、みきわめの結果が出るまで入れない（不合格なら1つずつ）。教習の順番がずれている人は入れない
+//  ・最低時限を超えて延びる人がいるので、みきわめの結果が出るまでは最低時限＋2時限まで入れる。不合格の後も、未実施の予約が2時限になるまで入れる（依頼者指定）。教習の順番がずれている人は入れない
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
-  const max = (CFG.autoAssign || {}).weeklyMax || 6, gk = new Map(), ng = new Set();
+  const max = (CFG.autoAssign || {}).weeklyMax || 6, extra = (CFG.autoAssign || {}).extra ?? 2, gk = new Map(), ng = new Set();
   let made = 0;
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   try {
@@ -722,7 +722,7 @@ async function autoAssign() {
         const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
         if (mk && mk.passed) continue;
         if (!pl.ok) { ng.add(s.token); continue; }
-        if (!(pl.total < lessonMin(s.stage, s) || (mk && !mk.passed && !pendingOf(s).length))) continue;
+        if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s) + extra) continue;
         const types = specialTypes(s), tries = types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
         let hit = "";
         for (const d of days()) {
