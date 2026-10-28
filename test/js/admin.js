@@ -248,6 +248,26 @@ function printInstructorCards() {
   area.scrollIntoView({ behavior: "smooth" });
 }
 
+// 日付の欄は和暦6桁（年2桁・月2桁・日2桁）で打つ（依頼者指定。例：190622 → 2007年6月22日）。元号は打たないので、令和・平成・昭和のうち
+// その欄に合うものを選ぶ：生年月日は15年以上前の日で一番新しいもの、ほかの日付は今日に一番近いもの
+const ERAS = [[2018, "2019-05-01", "9999-12-31"], [1988, "1989-01-08", "2019-04-30"], [1925, "1926-12-25", "1989-01-07"]];
+const p2 = n => String(n).padStart(2, "0");
+const isoToday = () => { const t = today(); return `${t.getFullYear()}-${p2(t.getMonth() + 1)}-${p2(t.getDate())}`; };
+const validYmd = (Y, m, d) => { const x = new Date(Y, m - 1, d); return Y > 1900 && x.getFullYear() === Y && x.getMonth() === m - 1 && x.getDate() === d; };
+function warekiToIso(digits, kind) {
+  if (digits.length !== 6) return "";
+  const y = +digits.slice(0, 2), m = +digits.slice(2, 4), d = +digits.slice(4);
+  const cands = ERAS.map(([base, from, to]) => { const iso = `${base + y}-${p2(m)}-${p2(d)}`; return y >= 1 && validYmd(base + y, m, d) && iso >= from && iso <= to ? iso : ""; }).filter(Boolean);
+  if (!cands.length) return "";
+  const t = isoToday();
+  if (kind === "birthDate") { const lim = `${+t.slice(0, 4) - 15}${t.slice(4)}`; return cands.find(c => c <= lim) || ""; }
+  const dist = c => Math.abs(new Date(c) - new Date(t));
+  return cands.slice().sort((a, b) => dist(a) - dist(b))[0];
+}
+const wdateText = iso => iso ? `${+iso.slice(0, 4)}年${+iso.slice(5, 7)}月${+iso.slice(8, 10)}日` : "";
+const wdateInput = (k, iso) => `<input id="f_${k}" class="wdate" data-k="${k}" data-iso="${esc(iso || "")}" value="${esc(wdateText(iso))}" inputmode="numeric" autocomplete="off" placeholder="和暦6桁（例：190622）">`;
+// 自動で入れた日付の欄（教習開始日→学科開始日・教習期限日、仮免交付日→仮免期限日）
+function setWdate(k, iso) { const el = document.getElementById(`f_${k}`); if (!el) return; el.dataset.iso = iso || ""; el.value = wdateText(iso); el.classList.remove("ng"); }
 // 登録・編集フォーム。日付はすべて YYYY-MM-DD。年齢は登録時点の「○歳○ヶ月」
 const DATES = [["startDate", "教習開始日"], ["classStart", "学科開始日"], ["deadline", "教習期限日"], ["skillStart", "技能開始日"], ["karimenIssued", "仮免交付日"], ["karimenExpiry", "仮免期限日"]];
 // みきわめに合格している時だけ、検定日・学科及び効果測定を直せる（あとから検定日が決まった時など）
@@ -264,15 +284,16 @@ function editSheet(s) {
   const opt = (v, cur, t = v) => `<option value="${esc(v)}" ${String(cur ?? "") === String(v) ? "selected" : ""}>${esc(t)}</option>`;
   sheet(`<h3>${isNew ? "教習生を追加" : "教習生を編集"}</h3>
   <datalist id="dl_held">${(CFG.heldLicenseTypes || []).map(x => `<option value="${esc(x)}">`).join("")}</datalist>
-  <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田"><span style="font-size:12px;color:var(--lv3);font-weight:700">教習生の名前は名字だけにしてください</span></div>
-  <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" autocomplete="off" placeholder="例：ヤマダ"></div></div>
-  <div class="row"><div class="field"><label for="f_no">教習生番号<span style="color:var(--lv3)">＊必須</span></label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off" inputmode="numeric" maxlength="4" placeholder="数字4桁（例：0123）"></div>
+  <div class="row"><div class="field"><label for="f_no">教習生番号<span style="color:var(--lv3)">＊必須</span></label><input id="f_no" value="${esc(s.studentNo)}" autocomplete="off" inputmode="numeric" maxlength="4" placeholder="数字（例：123 → 0123）"></div>
   ${S.isAdmin ? `<div class="field"><label for="f_in">担当指導員<span style="color:var(--lv3)">＊必須</span></label><select id="f_in">${opt("", s.instructorUid || (S.isInst ? S.uid : ""), "選んでください")}${S.instructors.map(i => opt(i.uid, s.instructorUid || (S.isInst ? S.uid : ""), i.name)).join("")}</select></div>` : "<div></div>"}</div>
-  <div class="row"><div class="field"><label for="f_birth">生年月日</label><input id="f_birth" type="date" value="${esc(s.birthDate || "")}"><span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
+  <div class="row"><div class="field"><label for="f_nm">名前（漢字）<span style="color:var(--lv3)">＊必須</span></label><input id="f_nm" autocapitalize="off" value="${esc(s.name)}" autocomplete="off" placeholder="例：山田"><span style="font-size:12px;color:var(--lv3);font-weight:700">教習生の名前は名字だけにしてください</span></div>
+  <div class="field"><label for="f_kana">フリガナ<span style="color:var(--lv3)">＊必須</span></label><input id="f_kana" value="${esc(s.nameKana || "")}" ${s.nameKana ? 'data-manual="1"' : ""} autocomplete="off" placeholder="例：ヤマダ"></div></div>
+  <div class="row"><div class="field"><label for="f_birthDate">生年月日</label>${wdateInput("birthDate", s.birthDate)}<span id="f_age" style="font-size:12px;color:var(--muted)">${s.birthDate ? `今日時点で ${ageText(s.birthDate)}` : ""}</span></div>
   <div></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><select id="f_lic">${opt("", s.license || "", "選んでください")}${[...new Set([...(CFG.licenseTypes || []), ...(s.license ? [s.license] : [])])].map(x => opt(x, s.license || "")).join("")}</select></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
-  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : k === "classStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（教習開始日から自動）</span>` : k === "skillStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（最初の教習を実施にした日が自動で入ります）</span>` : ""}</label><input id="f_${k}" type="date" value="${esc(s[k] || "")}"></div>`).join("")}</div>
+  <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : k === "classStart" || k === "deadline" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（教習開始日から自動）</span>` : k === "skillStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（最初の教習を実施にした日が自動で入ります）</span>` : ""}</label>${wdateInput(k, s[k])}</div>`).join("")}</div>
+  <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">日付は和暦の6桁で入れます（例：平成19年6月22日 → 190622）。6桁打つと西暦に変わって、次の欄に進みます。</p>
   <h3 style="margin-top:6px">教習の状況</h3>
   <p style="font-size:12px;color:var(--muted);margin:0 0 8px">転校などで途中から始める人は、段階と「これまでに受けた時限数」を入れてください。</p>
   <div class="row"><div class="field"><label for="f_st">段階</label><select id="f_st">${opt(1, s.stage, "第1段階")}${opt(2, s.stage, "第2段階")}</select></div>
@@ -376,10 +397,47 @@ function printCards() {
   area.scrollIntoView({ behavior: "smooth" });
 }
 
+// 和暦6桁の欄：6桁（西暦なら8桁）そろったら西暦に直して、次の空いている日付の欄へ進む
+function wdateInputEv(el) {
+  // 6桁を超えたら、超えた分を新しく打ち直した日付として扱う（間違えた日付の後ろに続けて打った時）
+  const raw = toHalfDigits(el.value).replace(/\D/g, ""), digits = raw.length > 6 ? raw.slice(6, 12) : raw;
+  el.dataset.touched = "1";
+  if (el.value !== digits) el.value = digits;
+  el.dataset.iso = ""; el.classList.remove("ng");
+  if (digits.length < 6) return;
+  const iso = warekiToIso(digits, el.dataset.k);
+  if (!iso) { el.classList.add("ng"); toast("日付が正しくありません（和暦6桁：例 190622）"); try { el.select(); } catch (x) { } return; }
+  setWdate(el.dataset.k, iso);
+  const k = el.dataset.k;
+  if (k === "birthDate") { const a = document.getElementById("f_age"); if (a) a.textContent = `今日時点で ${ageText(iso)}`; }
+  if (k === "startDate") { setWdate("classStart", iso); setWdate("deadline", karimenExpiryOf(iso, CFG.deadlineMonths || 9)); }
+  if (k === "karimenIssued") { setWdate("karimenExpiry", karimenExpiryOf(iso)); const st = document.getElementById("f_st"); if (st) st.value = "2"; }
+  const all = [...document.querySelectorAll(".wdate")], next = all.slice(all.indexOf(el) + 1).find(x => !x.dataset.iso);
+  if (next) next.focus(); else el.blur();
+}
+// 日付の欄を押したら、いったん空にして打ち直せるようにする。何も打たずに離れたら元の日付に戻す
+document.addEventListener("focusin", e => { const el = e.target; if (el.classList && el.classList.contains("wdate")) { el.dataset.touched = ""; if (el.dataset.iso) el.value = ""; } });
+document.addEventListener("focusout", e => {
+  const el = e.target;
+  if (el.classList && el.classList.contains("wdate") && !el.dataset.touched && el.dataset.iso && !el.value) el.value = wdateText(el.dataset.iso);
+  if (e.target.id === "f_no" && e.target.value && e.target.value.length < 4) e.target.value = e.target.value.padStart(4, "0");
+});
+// 名前（漢字）を打つ時の読み（ひらがな）を拾って、フリガナに入れる（手で直したフリガナは上書きしない）
+let nmReading = "";
+document.addEventListener("compositionupdate", e => { if (e.target.id === "f_nm" && /^[\u3041-\u309fー]+$/.test(e.data || "")) nmReading = e.data; }, true);
+document.addEventListener("compositionend", e => {
+  if (e.target.id !== "f_nm") return;
+  const k = document.getElementById("f_kana");
+  if (k && !k.dataset.manual && nmReading) k.value = toKatakana(k.value + nmReading);
+  nmReading = "";
+}, true);
 document.addEventListener("input", e => {
-  if (e.target.id === "f_startDate") { const x = document.getElementById("f_classStart"); if (x) x.value = e.target.value; return; }
-  if (e.target.id === "f_karimenIssued") { const x = document.getElementById("f_karimenExpiry"); if (x) x.value = karimenExpiryOf(e.target.value); return; }
-  if (e.target.id === "f_birth") { const el = document.getElementById("f_age"); if (el) el.textContent = e.target.value ? `今日時点で ${ageText(e.target.value)}` : ""; return; }
+  // 教習生番号：数字だけ（ほかの欄の文字が入り込んでも消す）
+  if (e.target.id === "f_no") { const v = toHalfDigits(e.target.value).replace(/\D/g, "").slice(0, 4); if (v !== e.target.value) e.target.value = v; return; }
+  // フリガナを手で直したら、名前からの自動入力はやめる
+  if (e.target.id === "f_kana") { e.target.dataset.manual = e.target.value ? "1" : ""; return; }
+  if (e.target.id === "f_nm" && !e.target.value) { const k = document.getElementById("f_kana"); if (k && !k.dataset.manual) k.value = ""; return; }
+  if (e.target.classList && e.target.classList.contains("wdate")) { wdateInputEv(e.target); return; }
   if (e.target.id === "flt") { S.filter = e.target.value; const pos = e.target.selectionStart; render(); const f = document.getElementById("flt"); f.focus(); f.setSelectionRange(pos, pos); } });
 document.addEventListener("change", async e => {
   if (e.target.id === "msort") { S.msort = e.target.value; render(); return; }
@@ -417,12 +475,15 @@ document.addEventListener("click", async e => {
     else if (a === "doPrint") window.print();
     else if (a === "save") {
       const v = id => document.getElementById(id).value.trim();
+      const vd = k => { const el = document.getElementById(`f_${k}`); return el ? el.dataset.iso || "" : ""; };
+      const bad = ["birthDate", ...DATES.map(x => x[0])].find(k => { const el = document.getElementById(`f_${k}`); return el && el.value.trim() && !el.dataset.iso; });
+      if (bad) return toast(`${bad === "birthDate" ? "生年月日" : DATES.find(x => x[0] === bad)[1]}の日付が正しくありません（和暦6桁：例 190622）`);
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
-        studentNo: toHalfDigits(v("f_no")), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
-        birthDate: v("f_birth") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
+        studentNo: (n => n ? n.padStart(4, "0") : "")(toHalfDigits(v("f_no")).replace(/\D/g, "")), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
+        birthDate: vd("birthDate") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
       };
-      DATES.forEach(([k]) => { data[k] = v(`f_${k}`) || null; });
+      DATES.forEach(([k]) => { data[k] = vd(k) || null; });
       // 教習生番号は必須（同じ名字の人を番号で見分けるため。依頼者指定）
       if (!data.studentNo) return toast("教習生番号を入れてください（数字4桁。例：0123）");
       if (!/^\d{4}$/.test(data.studentNo)) return toast("教習生番号は数字4桁で入れてください（例：0123）");

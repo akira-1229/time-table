@@ -357,3 +357,5 @@ th.tday small{color:var(--today)!important;font-weight:700}
 .wc.offx{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3);opacity:1;cursor:default}
 /* ほかの指導員から頼まれた教習（代わり） */
 .wc.bk.subx{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}
+/* 教習生の登録：和暦6桁の日付欄。正しくない日付は赤枠 */
+.wdate.ng{border-color:var(--lv3);background:var(--lv3-soft)}
