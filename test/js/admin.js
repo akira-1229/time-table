@@ -278,9 +278,13 @@ function setWdate(k, iso) { const el = document.getElementById(`f_${k}`); if (!e
 const DATES = [["startDate", "教習開始日"], ["classStart", "学科開始日"], ["deadline", "教習期限日"], ["skillStart", "技能開始日"], ["karimenIssued", "仮免交付日"], ["karimenExpiry", "仮免期限日"]];
 // みきわめに合格している時だけ、検定日・学科及び効果測定を直せる（あとから検定日が決まった時など）
 function mkFields(s) {
-  const m = !S.isAdmin && s.token && mikiwameOf(s);
-  if (!m) return "";
-  if (!m.passed) return `<p style="font-size:13px;margin:0 0 10px">みきわめ（第${s.stage}段階）：<b>不合格</b>（${esc(m.date || "")}）。次の教習の「実施」で、もう一度みきわめを記録します。</p>`;
+  if (S.isAdmin || !s.token) return "";
+  const m = mikiwameOf(s);
+  // みきわめ前（不合格の後も）に決めておく検定日（予定）。みきわめ合格でそのまま検定日になり、不合格なら取り消す（依頼者指定）
+  const plan = `<div class="field"><label for="f_kplan">検定日（決まっていれば）</label><input id="f_kplan" type="date" value="${esc(s[`kenteiPlan${s.stage}`] || "")}"${s.stage === 1 ? ' data-st1="1"' : ""}><div class="agewarn"></div></div>
+  <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">みきわめに合格すると、この日がそのまま検定日になります。不合格の時は取り消します。</p>`;
+  if (!m) return plan;
+  if (!m.passed) return `<p style="font-size:13px;margin:0 0 10px">みきわめ（第${s.stage}段階）：<b>不合格</b>（${esc(m.date || "")}）。次の教習の「実施」で、もう一度みきわめを記録します。</p>${plan}`;
   return `<div class="row"><div class="field"><label for="f_kentei">検定日（みきわめ合格 ${esc(m.date || "")}）</label><input id="f_kentei" type="date" value="${esc(m.kenteiDate || "")}"${s.stage === 1 ? ' data-st1="1"' : ""}><div class="agewarn"></div></div>
   <div class="field"><label for="f_gakka">学科及び効果測定</label><select id="f_gakka"><option value="1" ${m.gakkaDone ? "selected" : ""}>終わっている</option><option value="0" ${m.gakkaDone ? "" : "selected"}>終わっていない</option></select></div></div>
   <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">検定日を空にすると「未確定」になります。</p>`;
@@ -466,7 +470,7 @@ document.addEventListener("change", async e => {
 });
 // 第1段階の検定日：18歳の誕生日より前ならすぐ警告する（高校生。誕生日当日は可。依頼者指定）
 document.addEventListener("change", e => {
-  if (e.target.id !== "f_kentei" || !e.target.dataset.st1) return;
+  if (!["f_kentei", "f_kplan"].includes(e.target.id) || !e.target.dataset.st1) return;
   const b = document.getElementById("f_birthDate"), ng = kentei1AgeNg(b && b.dataset.iso, e.target.value), w = e.target.parentElement.querySelector(".agewarn");
   if (w) w.innerHTML = ng ? `<p style="color:var(--lv3);font-size:13px;font-weight:700;margin:6px 0 0">⚠ ${esc(ng)}</p>` : "";
   if (ng) toast(ng);
@@ -533,6 +537,12 @@ document.addEventListener("click", async e => {
         specialDoneOf(null, data);
       }
       if (!old) data.doneCount = 0;
+      const kp = document.getElementById("f_kplan");
+      if (old && kp && old.stage === data.stage) {
+        const ng = old.stage === 1 && kentei1AgeNg(data.birthDate, kp.value);
+        if (ng && kp.value !== (old[`kenteiPlan${old.stage}`] || "") && !confirm(`${ng}\n\nこのまま保存しますか？`)) return;
+        data[`kenteiPlan${old.stage}`] = kp.value || null;
+      }
       const kd = document.getElementById("f_kentei");
       if (old && kd && old.stage === data.stage) {
         const m = mikiwameOf(old);

@@ -708,6 +708,15 @@ async function assign(tok, ds, p, gk, quiet) {
 //  ・その段階の最低時限まで入れたら、みきわめの結果が出るまで入れない。不合格なら、未実施の予約が2時限になるまで入れる（延びる人がいるため。依頼者指定）。教習の順番がずれている人は入れない
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
+// 自動で入れる枠の順番。ふつうは日時の早い順。みきわめ不合格で検定日（予定）が決まっている人は、
+// 検定日の前日の1〜7限を一番に、あとは検定日に近い日から（検定日当日以降には入れない。依頼者指定）
+function slotOrder(s, mk) {
+  const all = days().flatMap(d => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(q => [d, q]));
+  const plan = mk && !mk.passed && s[`kenteiPlan${s.stage}`];
+  if (!plan) return all;
+  const eve = dateStr(addDays(parseDate(plan), -1)), day = q => q <= 7 ? 0 : 1;
+  return all.filter(([d]) => d < plan).sort((a, b) => ((a[0] === eve ? 0 : 1) + day(a[1])) - ((b[0] === eve ? 0 : 1) + day(b[1])) || b[0].localeCompare(a[0]) || day(a[1]) - day(b[1]) || a[1] - b[1]);
+}
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
   const max = (CFG.autoAssign || {}).weeklyMax || 6, extra = (CFG.autoAssign || {}).extra ?? 2, gk = new Map(), ng = new Set();
@@ -725,8 +734,9 @@ async function autoAssign() {
         if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s)) continue;
         const types = specialTypes(s), tries = types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
         let hit = "";
-        for (const d of days()) {
-          for (let q = 1; q <= 10 && !hit; q++) for (const ty of tries) {
+        for (const [d, q] of slotOrder(s, mk)) {
+          if (hit) break;
+          for (const ty of tries) {
             const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
             if (ev.ok === false || ev.dark) continue;
             const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
@@ -734,7 +744,6 @@ async function autoAssign() {
             if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
             hit = "ok"; break;
           }
-          if (hit) break;
         }
         if (hit === "ok") { made++; progress = true; }
       }
@@ -787,7 +796,7 @@ async function markResult(ids, result, mk = null) {
   ids = S.pending.filter(b => ids.includes(b.id) || (b.pairId && pairs.has(`${b.token}|${b.pairId}`))).map(b => b.id);
   const list = S.pending.filter(b => ids.includes(b.id));
   if (!list.length) return;
-  const tok = list[0].token, s = ST(tok), it = lessonItems(list)[0];
+  const tok = list[0].token, s = ST(tok), it = lessonItems(list)[0], planWas = s && s[`kenteiPlan${s.stage}`];
   const batch = writeBatch(db);
   list.forEach(b => batch.update(doc(db, "students", tok, "bookings", b.id), { result, resultAt: serverTimestamp(), updatedAt: serverTimestamp() }));
   const text = `${md(it.date)} ${list.map(b => b.period).sort((m, n) => m - n).join("・")}限${typeName(list[0]) ? `（${typeName(list[0])}）` : ""}`;
@@ -795,7 +804,8 @@ async function markResult(ids, result, mk = null) {
     const upd = { doneCount: increment(it.units) };
     if (it.lessonType === "kiken") upd.kikenDone = true;
     if (isHwType(it.lessonType)) upd.hwDone = true;
-    if (mk) upd[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids, at: Timestamp.now() };
+    // 決まっていた検定日（予定）は、合格ならみきわめの検定日へ移り、不合格なら取り消す（依頼者指定）
+    if (mk) { upd[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids, at: Timestamp.now() }; upd[`kenteiPlan${s.stage}`] = null; }
     // 技能開始日：最初に「実施」にした教習の日を自動で入れる（依頼者指定）
     if (s && (!s.skillStart || s.skillStart > it.date)) upd.skillStart = it.date;
     batch.update(doc(db, "students", tok), upd);
@@ -806,13 +816,14 @@ async function markResult(ids, result, mk = null) {
   await batch.commit();
   if (result !== "done") sendNow();
   if (s) {
-    if (result === "done") { if (!s.skillStart || s.skillStart > it.date) s.skillStart = it.date; s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (isHwType(it.lessonType)) s.hwDone = true; if (mk) s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; }
+    if (result === "done") { if (!s.skillStart || s.skillStart > it.date) s.skillStart = it.date; s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (isHwType(it.lessonType)) s.hwDone = true; if (mk) { s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; s[`kenteiPlan${s.stage}`] = null; } }
     else s.lastNotifiedAt = Timestamp.now();
   }
   S.pending = S.pending.filter(b => !ids.includes(b.id));
   S.bookings.forEach(b => { if (ids.includes(b.id)) b.result = result; });
   render();
-  if (!mk || mk.gakkaDone) toast(result === "done" ? `${nm(s)} ${text} を実施にしました${mk ? `（みきわめ${mk.passed ? "合格" : "不合格"}）` : ""}` : `${nm(s)}に欠席を通知しました`);
+  const planGone = mk && !mk.passed && planWas ? `。決まっていた検定日（${md(planWas)}）は取り消しました` : "";
+  if (!mk || mk.gakkaDone) toast(result === "done" ? `${nm(s)} ${text} を実施にしました${mk ? `（みきわめ${mk.passed ? "合格" : "不合格"}）` : ""}${planGone}` : `${nm(s)}に欠席を通知しました`);
   else sheet(`<h3>${esc(nm(s))}を実施にしました（みきわめ${mk.passed ? "合格" : "不合格"}）</h3>
     <div class="banner warn">「<b>検定日の2日前までに学科及び効果測定を終わらせておかないといけません</b>」ということを教習生に伝えてください。</div>
     <div class="banner warn">学科及び効果測定が終了していない教習生に対する<b>みきわめ報告書</b>を提出してください。</div>
@@ -827,7 +838,8 @@ function mikiwameSheet(s, it, ids) {
   sheet(`<h3>みきわめ（第${s.stage}段階 ${it.no}時限目）</h3>
   <p>${esc(nm(s))}<br>${md(it.date)} ${it.bookings.map(b => b.period).join("・")}限</p>
   <div class="field"><label>みきわめの結果</label><div class="radios">${r("mk_pass", "1", "合格")}${r("mk_pass", "0", "不合格")}</div></div>
-  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date"${ageAttr(s)}><div class="agewarn"></div></div>
+  ${s[`kenteiPlan${s.stage}`] ? `<p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">決まっている検定日：${md(s[`kenteiPlan${s.stage}`])}（不合格の時は取り消します）</p>` : ""}
+  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date" value="${esc(s[`kenteiPlan${s.stage}`] || "")}"${ageAttr(s)}><div class="agewarn"></div></div>
     <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="mk_und"> 検定日は未確定</label></div>
   <div class="field"><label>学科及び効果測定</label><div class="radios">${r("mk_gakka", "1", "終わっている")}${r("mk_gakka", "0", "終わっていない")}</div></div>
   <div class="list"><button class="btn accent full" data-act="mkOk" data-ids="${ids.join(",")}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
@@ -1088,19 +1100,22 @@ document.addEventListener("click", async e => {
       } else upd = { active: false, graduatedOn: mk.kenteiDate, [key]: { ...mk, kenteiResult: "pass" } };
       t.disabled = true;
       await updateDoc(doc(db, "students", st.token), upd);
-      // 修了検定に合格：検定日以降に入っている（まだチェックしていない）予約は、第2段階の1時限目からに付け替える（依頼者指定）
+      // 検定日以降に入っている（まだチェックしていない）予約：修了検定の合格なら第2段階の1時限目からに付け替える。
+      // 卒業検定の合格なら取り消す（卒業なので教習生への通知はしない）（依頼者指定）
       let moved = 0;
-      if (st.stage === 1 && mk.kenteiDate) {
+      if (mk.kenteiDate) {
         const bs = (await getDocs(collection(db, "students", st.token, "bookings"))).docs.filter(x => { const b = x.data(); return b.date >= mk.kenteiDate && b.status !== "cancelled" && !b.result && b.instructorUid === S.uid; });
         const batch = writeBatch(db);
-        bs.forEach(x => batch.update(x.ref, { stage: 2, updatedAt: serverTimestamp() }));
+        bs.forEach(x => st.stage === 1 ? batch.update(x.ref, { stage: 2, updatedAt: serverTimestamp() })
+          : x.data().status === "draft" ? batch.delete(x.ref) : batch.update(x.ref, { status: "cancelled", cancelRequested: false, updatedAt: serverTimestamp() }));
         if (bs.length) await batch.commit();
         const ids = new Set(bs.map(x => x.id)); moved = ids.size;
-        [...S.bookings, ...S.pending].forEach(b => { if (ids.has(b.id)) b.stage = 2; });
+        if (st.stage === 1) [...S.bookings, ...S.pending].forEach(b => { if (ids.has(b.id)) b.stage = 2; });
+        else { S.bookings = S.bookings.filter(b => !ids.has(b.id)); S.pending = S.pending.filter(b => !ids.has(b.id)); }
       }
       Object.assign(st, upd);
       if (st.active === false) S.students = S.students.filter(x => x.token !== st.token);
-      closeSheet(); render(); toast(st.active === false ? `${nm(st)}の卒業を記録しました` : `${nm(st)}は第2段階に進みました${moved ? `（検定日以降の予約${moved}件は第2段階の1時限目からになります）` : ""}`);
+      closeSheet(); render(); toast(st.active === false ? `${nm(st)}の卒業を記録しました${moved ? `（検定日以降の予約${moved}件を取り消しました）` : ""}` : `${nm(st)}は第2段階に進みました${moved ? `（検定日以降の予約${moved}件は第2段階の1時限目からになります）` : ""}`);
     }
     else if (a === "kenteiFail") {
       const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
