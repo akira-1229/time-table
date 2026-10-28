@@ -128,6 +128,11 @@ async function loadWeek() {
         laterRender();
       }, e => { if (first) { first = false; reject(e); } }));
     });
+    // ほかの指導員から頼まれた教習（この週の分）
+    try {
+      const sq2 = query(collectionGroup(db, "bookings"), where("subUid", "==", S.uid), where("weekId", "==", wid()));
+      S.subs = (await getDocs(sq2)).docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status !== "cancelled");
+    } catch (e) { S.subs = []; noteIndex(e); }
     const w = await getDoc(doc(db, "weeks", `${S.uid}_${wid()}`));
     S.confirmed = w.exists();
     const cq = query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("cancelRequested", "==", true));
@@ -235,7 +240,10 @@ const itemOf = b => { const s = ST(b.token); return s ? planOf(s).items.find(it 
 const noText = (s, it) => it ? `${noRange(it)}時限目${it.no + it.units - 1 > lessonMin(s.stage, s) ? "（延長）" : ""}` : "";
 
 /* ---------- 判定 ---------- */
-const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p);
+// その時限の自分の予約（ほかの指導員に依頼した予約は除く。依頼した時限には、別の教習生を入れられる）
+const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p && !b.subUid);
+// ほかの指導員から頼まれた教習（その時限は自分の予約が入っているのと同じ扱い）
+const subAt = (ds, p) => (S.subs || []).find(b => b.date === ds && b.period === p);
 const bookingsAt = (ds, p) => S.bookings.filter(b => b.date === ds && b.period === p);
 // 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は2人まで（config の capacity。依頼者指定）
 const SHARED = ["hw3", "kiken"];
@@ -243,7 +251,7 @@ const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "k
 // a限から始まる、一緒に受けられる教習（高速教習3時限・危険予測2時限）の組に入っている教習生
 // （その時限がその種類の同じ組の予約だけの時）。ほかの予約が混じっていれば null
 function groupAt(ds, a, type) {
-  const ps = span(a, type), list = S.bookings.filter(b => b.date === ds && ps.includes(b.period));
+  const ps = span(a, type), list = S.bookings.filter(b => b.date === ds && ps.includes(b.period) && !b.subUid);
   if (!list.length) return [];
   if (list.some(b => b.lessonType !== type)) return null;
   const toks = [...new Set(list.map(b => b.token))];
@@ -295,6 +303,7 @@ function evaluate(s, ds, p) {
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
   { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
   if (isOff(ds, p)) return { ok: false, reason: "指導員の予定（✕）が入っている枠です" };
+  if (subAt(ds, p)) return { ok: false, reason: "ほかの指導員から頼まれた教習が入っている時間です" };
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
   if (bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
   if (dayCount(s.token, ds) >= dayMax(s)) return { ok: false, reason: `この日は上限の${dayMax(s)}時限まで入っています` };
@@ -356,6 +365,7 @@ function evaluatePair(s, ds, a, type = "kiken") {
   if (joining && grp.length >= CAP(type)) return { ok: false, reason: `この${L}は満員です（${CAP(type)}人まで）` };
   for (const q of ps) {
     if (isOff(ds, q)) return { ok: false, reason: `${q}限は指導員の予定（✕）が入っています` };
+    if (subAt(ds, q)) return { ok: false, reason: `${q}限はほかの指導員から頼まれた教習が入っています` };
     if (!isFree(s.token, ds, q)) return { ok: false, reason: `${q}限が空いていません` };
     if (!joining && bookAt(ds, q)) return { ok: false, reason: `${q}限はすでに予約が入っています${SHARED.includes(type) ? `（${L}は、同じ時限の組にだけ一緒に入れます）` : ""}` };
   }
@@ -494,8 +504,9 @@ function render() {
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th class="pl">${p}限<small>${P[p][0]}</small></th>`;
     ds.forEach(d => {
-      const b = bookAt(d, p); const lb = label(d, p), bs = bookingsAt(d, p);
+      const lb = label(d, p), bs = bookingsAt(d, p), b = bs.length === 1 ? bs[0] : bookAt(d, p), sb = subAt(d, p);
       const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}">`;
+      if (!bs.length && sb) { h += `${td}<button class="wc bk subx" data-act="subInfo" data-id="${sb.id}" aria-label="${lb} ${esc(sb.subFromName || "")}指導員から頼まれた教習">${esc(String(sb.subStudent || "?").replace(/さん.*$/, "").slice(0, 4))}<small>代わり</small></button></td>`; return; }
       if (!bs.length && isOff(d, p)) { h += `${td}<button class="wc offx" disabled aria-label="${lb} 指導員の予定あり">✕<small>予定</small></button></td>`; return; }
       if (isPast(d)) {
         // 過ぎた日：予約の変更・取り消しはできない。押せるのは実施・欠席のチェックだけ（依頼者指定）
@@ -514,7 +525,7 @@ function render() {
       } else if (b) {
         const s = ST(b.token);
         const gone = goneDraft(b);
-        h += `${td}<button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(nm(s))}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? SHORT[b.lessonType] || PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
+        h += `${td}<button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(nm(s))}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.subUid && !b.result ? `→${esc(String(b.subName || "").slice(0, 3))}` : b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? SHORT[b.lessonType] || PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
       } else if (pk && S.ptype && hasSpecial(pk)) {
         const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
         h += `${td}<button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
@@ -617,7 +628,7 @@ function joinBtn(b) {
   return `<button class="btn primary full" data-act="groupJoin" data-d="${b.date}" data-p="${a}" data-t="${b.lessonType}">この${PT(b.lessonType).label}に一緒に入れる（あと${CAP(b.lessonType) - grp.length}人）</button>`;
 }
 // 何人かで入っている枠の短い表示（「高速」「危険」）
-const multiShort = bs => bs[0].lessonType === "kiken" ? SHORT.kiken || "危険" : "高速";
+const multiShort = bs => bs.some(b => b.subUid) ? "依頼含む" : bs[0].lessonType === "kiken" ? SHORT.kiken || "危険" : "高速";
 const lessonsOf = (stage, k) => ((CFG.lessons || {})[stage] || {})[k] || "";
 
 // 学科の受講確認（config の gakkaCheck）：入れようとしている教習が、決まった時限目（第2段階の10・13時限目など）に当たる時に確認を出す
@@ -971,8 +982,41 @@ document.addEventListener("click", async e => {
         <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
       } else {
         sheet(`${head}<br><span style="font-size:13px;color:var(--muted)">${b.status === "draft" ? "まだ確定していません。" : "教習生に通知済みです。取り消すと自動で通知されます。"}</span></p>
-        <div class="list">${joinBtn(b)}<button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
+        ${b.subUid ? `<div class="banner info" style="margin-top:0"><b>${esc(b.subName)} 指導員に依頼しています。</b><br><span style="font-size:12px">この時限には、別の教習生を入れることもできます。</span></div>` : ""}
+        <div class="list">${isPast(b.date) ? "" : b.subUid ? `<button class="btn full" data-act="undelegate" data-id="${b.id}">依頼をやめる（自分で教える）</button><button class="btn full" data-act="open" data-d="${b.date}" data-p="${b.period}">この時限に別の教習生を入れる</button>` : `<button class="btn primary full" data-act="delegate" data-id="${b.id}">他の人に依頼する</button>`}${joinBtn(b)}<button class="btn full" data-act="swap" data-id="${b.id}">別の教習生に変える</button><button class="btn accent full" data-act="unbook" data-id="${b.id}">この予約を取り消す</button><button class="btn full" data-act="close">閉じる</button></div>`);
       }
+    }
+    else if (a === "delegate") {
+      // この予約（危険予測・高速教習は組ごと）を、その時間に空いているほかの指導員に頼む
+      const b = S.bookings.find(x => x.id === t.dataset.id), s = ST(b.token), group = await pairGroup(b), ps = group.map(x => x.period);
+      sheet(`<h3>他の人に依頼する</h3><p>探しています…</p>`);
+      const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
+      const rows = [];
+      for (const i of ins) {
+        const od = await getDoc(doc(db, "offs", `${i.uid}_${b.date.slice(0, 7)}`)), off = new Set(od.exists() ? od.data().slots || [] : []);
+        const day = parseDate(b.date).getDate();
+        const own = (await getDocs(query(collectionGroup(db, "bookings"), where("instructorUid", "==", i.uid), where("date", "==", b.date)))).docs.map(d => d.data()).filter(x => x.status !== "cancelled" && !x.subUid);
+        const sub = (await getDocs(query(collectionGroup(db, "bookings"), where("subUid", "==", i.uid), where("date", "==", b.date)))).docs.map(d => d.data()).filter(x => x.status !== "cancelled");
+        const why = ps.some(q => off.has(slotKey(day, q))) ? "予定（✕）あり" : ps.some(q => own.some(x => x.period === q) || sub.some(x => x.period === q)) ? "ほかの予約あり" : "";
+        rows.push(`<div class="item"><div><div class="t">${esc(i.name)} 指導員</div><div class="s" style="${why ? "color:var(--orange)" : ""}">${why || "空いています"}</div></div><button class="btn accent" data-act="delegateTo" data-id="${b.id}" data-u="${i.uid}" data-n="${esc(i.name)}" ${why ? "disabled" : ""}>依頼する</button></div>`);
+      }
+      sheet(`<h3>他の人に依頼する</h3><p>${esc(nm(s))}<br>${md(b.date)} ${ps.join("・")}限${typeName(b) ? `（${typeName(b)}）` : ""}</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:0">依頼した時限は、相手の指導員のマス目に「代わり」で出ます。担当（進み具合・実施のチェックなど）は今まで通りです。</p>
+        <div class="list">${rows.join("") || '<div class="hist"><div>ほかの指導員が登録されていません。</div></div>'}</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
+    }
+    else if (a === "delegateTo" || a === "undelegate") {
+      const b = S.bookings.find(x => x.id === t.dataset.id), group = await pairGroup(b), on = a === "delegateTo";
+      const upd = on ? { subUid: t.dataset.u, subName: t.dataset.n, subFrom: S.uid, subFromName: S.me.name, subStudent: nm(ST(b.token)) } : { subUid: null, subName: null, subFrom: null, subFromName: null, subStudent: null };
+      if (!on && group.some(x => bookAt(x.date, x.period))) return toast("この時限には、すでに別の教習生が入っています。先にそちらを動かしてください");
+      t.disabled = true;
+      for (const x of group) await updateDoc(doc(db, "students", x.token, "bookings", x.id), { ...upd, updatedAt: serverTimestamp() });
+      S.bookings.forEach(x => { if (group.some(g => g.id === x.id)) Object.assign(x, upd); });
+      closeSheet(); render(); toast(on ? `${t.dataset.n} 指導員に依頼しました` : "依頼をやめました");
+    }
+    else if (a === "subInfo") {
+      const b = S.subs.find(x => x.id === t.dataset.id);
+      sheet(`<h3>${label(b.date, b.period)}　代わりの教習</h3><p><b>${esc(b.subStudent || "")}</b><br>${esc(b.subFromName || "")} 指導員から頼まれた教習です。${typeName(b) ? `<br>${typeName(b)}` : ""}</p>
+        <p style="font-size:13px;color:var(--muted)">実施・欠席のチェックは、担当の指導員がします。</p><div class="list"><button class="btn full" data-act="close">閉じる</button></div>`);
     }
     else if (a === "pastCheck") {
       // 過ぎた日の予約：実施・欠席のチェック（と付け間違いの取り消し）だけ
@@ -994,7 +1038,7 @@ document.addEventListener("click", async e => {
     }
     else if (a === "bookedMulti") {
       const ds = t.dataset.d, p = +t.dataset.p, bs = bookingsAt(ds, p);
-      sheet(`<h3>${label(ds, p)}　${PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
+      sheet(`<h3>${label(ds, p)}　${bs.some(b => b.subUid) || !bs[0].lessonType ? "この時限の予約" : PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="booked" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.status === "draft" ? "未確定" : acked(x) ? "確認済" : "通知済み"}</div></div></button>`; }).join("")}</div>
         <div class="list" style="margin-top:10px">${joinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
     }

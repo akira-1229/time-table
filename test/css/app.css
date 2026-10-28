@@ -355,3 +355,5 @@ th.tday small{color:var(--today)!important;font-weight:700}
 /* 指導員の予定（✕＝教習に出られない時間）。指導員の「予定の登録」と、教習生の表・指導員のマス目で同じ色 */
 .cell.ng{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3)}
 .wc.offx{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3);opacity:1;cursor:default}
+/* ほかの指導員から頼まれた教習（代わり） */
+.wc.bk.subx{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}
