@@ -173,10 +173,8 @@ async function renderOff() {
   const ds = offDays(), tds = dateStr(today());
   await loadOff([...new Set(ds.map(d => d.slice(0, 7)))]);
   const n = ds.reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(p => isOff(d, p)).length, 0);
-  let h = `<div class="topbar"><div><h1>予定の登録</h1><small>${esc(S.me.name)} 指導員</small></div></div>
-  <section class="panel"><div class="body">
-  <div class="banner info"><b>毎週水曜日に、来週の予定を入れてください。</b><br>休みの日や、ほかの予定があって<b>教習に出られない時間に✕</b>を付けます。押すとすぐに✕が付き、もう一度押すと外れます。日付の下の「全部」で、その日の全部の時限に✕を付けられます。<br><span style="font-size:12px">✕を付けた時間には予約が入りません（手で入れる時も、自動で割り振る時も）。教習生の画面には出ません。</span></div>
-  <div class="weeknav"><button class="btn" data-act="offWk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(ds[6])}</b><button class="btn" data-act="offWk" data-v="7" aria-label="次の週">▶</button></div>
+  const infoH = `<div class="banner info"><b>毎週水曜日に、来週の予定を入れてください。</b><br>休みの日や、ほかの予定があって<b>教習に出られない時間に✕</b>を付けます。押すとすぐに✕が付き、もう一度押すと外れます。日付の下の「全部」で、その日の全部の時限に✕を付けられます。<br><span style="font-size:12px">✕を付けた時間には予約が入りません（手で入れる時も、自動で割り振る時も）。教習生の画面には出ません。</span></div>`;
+  let h = `<div class="weeknav"><button class="btn" data-act="offWk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(ds[6])}</b><button class="btn" data-act="offWk" data-v="7" aria-label="次の週">▶</button></div>
   <div class="gridwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}${d === tds ? " tday t1" : ""}">${parseDate(d).getDate()}<small>${d === tds ? "今日" : WD[w]}</small></th>`; });
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
@@ -188,10 +186,14 @@ async function renderOff() {
     h += `</tr>`;
   }
   h += `</tbody></table></div>
-  <div class="legend"><span><i class="sw" style="background:var(--lv3-soft);border-color:var(--lv3)"></i>教習に出られない（✕）</span><span><i class="sw"></i>教習に出られる</span></div>
-  <p style="font-size:13px;margin:10px 0 6px">この週の✕：<b>${n}</b>時限</p>
-  <button class="btn primary full" data-act="offToAssign">この週の予約の管理へ（自動で割り振る）</button></div></section>`;
-  document.getElementById("off").innerHTML = h;
+  <div class="legend"><span><i class="sw" style="background:var(--lv3-soft);border-color:var(--lv3)"></i>教習に出られない（✕）</span><span><i class="sw"></i>教習に出られる</span></div>`;
+  const endH = `<p style="font-size:13px;margin:10px 0 6px">この週の✕：<b>${n}</b>時限</p>
+  <button class="btn primary full" data-act="offToAssign">この週の予約の管理へ（自動で割り振る）</button>`;
+  // PC表示：予約の管理と同じく、左にマス目、右に説明・✕の数・ボタン（依頼者指定）
+  document.getElementById("off").innerHTML = `<div class="topbar"><div><h1>予定の登録</h1><small>${esc(S.me.name)} 指導員</small></div></div>
+  <section class="panel"><div class="body">${isPC()
+    ? `<div class="asg"><div class="asg-main">${h}</div><aside class="asg-side">${infoH}${endH}</aside></div>`
+    : infoH + h + endH}</div></section>`;
 }
 function watchAvail(yms) {
   stopWatch();
@@ -945,7 +947,7 @@ document.addEventListener("pref:change", e => {
   if (S.view === "settings") renderSettings();
   if (S.uid && S.me) render();
 });
-onViewChange(() => { if (S.uid && S.me) { render(); if (S.view === "settings") renderSettings(); } });
+onViewChange(() => { if (S.uid && S.me) { render(); if (S.view === "settings") renderSettings(); if (S.view === "off") renderOff(); } });
 
 /* ---------- 操作 ---------- */
 document.addEventListener("click", async e => {

@@ -251,10 +251,16 @@ body.pc .tn-tabs button:hover{background:var(--bg)}
 body.pc .tn-tabs button[aria-selected="true"]{background:var(--blue-soft);color:var(--blue)}
 body.pc .tn-tabs svg{width:20px;height:20px}
 body.pc .tabnav .tn-foot{display:flex;flex-direction:column;align-items:flex-start;margin-top:auto}
-body.pc.shell #appWrap,body.pc.shell #mngWrap,body.pc.shell #setWrap,body.pc.shell #ntcWrap{margin-left:220px}
+body.pc.shell #appWrap,body.pc.shell #mngWrap,body.pc.shell #setWrap,body.pc.shell #ntcWrap,body.pc.shell #offWrap{margin-left:220px}
 /* 予約の管理（PC表示）：左にマス目、右に集計・お知らせ・一覧 */
 body.pc #appWrap{max-width:1280px;padding:20px 28px 40px}
 body.pc.shell #appWrap{margin-right:auto}
+/* 予定の登録（PC表示）：予約の管理と同じ並び */
+body.pc #offWrap{max-width:1280px;padding:20px 28px 40px}
+body.pc.shell #offWrap{margin-right:auto}
+body.pc #off table.cal{width:100%;table-layout:fixed}
+body.pc #off .calt th.pl{width:64px}
+body.pc #off .cell{width:100%;height:48px;font-size:16px}
 .asg{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
 .asg-side{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;min-width:0}
 body.pc .wc{height:52px;font-size:13px}
