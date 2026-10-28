@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -316,7 +316,7 @@ function editSheet(s) {
   ${mkFields(s)}
   ${isNew ? "" : `<p style="font-size:12px;color:var(--muted);margin:0 0 10px">受講済みの時限数：これまでの分 ${s.priorDone || 0}＋このシステムで実施チェックした分 ${s.doneCount || 0}＝${doneOf(s)}時限（最低${lessonMin(s.stage, s)}時限）。段階を変えると、時限数は0から数え直します。危険予測・高速教習を受けたかは、第2段階の時限数から自動で決まります。</p>`}
   <div class="list"><button class="btn primary full" data-act="save" data-s="${isNew ? "" : s.token}">保存する</button>
-  ${isNew ? "" : `<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
+  ${isNew ? "" : `${MODE === "staff" ? `<button class="btn full" data-act="availEdit" data-s="${s.token}">空き時間を入力する（今日から1ヶ月）</button>` : ""}<button class="btn full" data-act="showQR" data-s="${s.token}">QRコードを表示する</button><button class="btn full" data-act="reissue" data-s="${s.token}">QRコードを再発行する（古いQRは使えなくなります）</button><button class="btn full" data-act="del" data-s="${s.token}" style="color:var(--orange)">この教習生のデータを削除する</button>`}
   <button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
@@ -385,6 +385,48 @@ async function deleteStudent(tok) {
   await batch.commit();
 }
 
+// 教習生がアプリを使い始める前に、指導員が空き時間（◯）を代わりに入れる（依頼者指定）。
+// 入れられるのは今日から1ヶ月だけ（それより先の日は押せない）。押すたびにすぐ保存する（確認なし）
+const AV = { s: null, days: [], m: {} };
+const avOn = (d, p) => !!(AV.m[d.slice(0, 7)] && AV.m[d.slice(0, 7)].slots.has(slotKey(+d.slice(8), p)));
+async function availSheet(s) {
+  const t0 = today(), end = new Date(t0.getFullYear(), t0.getMonth() + 1, t0.getDate());
+  AV.s = s; AV.days = []; AV.m = {};
+  for (let d = t0; d < end; d = addDays(d, 1)) AV.days.push(dateStr(d));
+  for (const ym of [...new Set(AV.days.map(d => d.slice(0, 7)))]) {
+    const r = await getDoc(doc(db, "students", s.token, "months", ym));
+    AV.m[ym] = { slots: new Set(r.exists() ? r.data().slots || [] : []), late: !!(r.exists() && r.data().late) };
+  }
+  drawAvail();
+}
+function drawAvail() {
+  const s = AV.s, ds = AV.days, n = ds.reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(p => avOn(d, p)).length, 0);
+  let h = `<h3>${esc(s.name)}さんの空き時間</h3>
+  <p style="font-size:13px;margin:0 0 8px">教習生の代わりに、予約を入れてよい時間に◯を付けます。押すとすぐに保存されます。入れられるのは<b>今日から1ヶ月（${ds[0].slice(5).replace("-", "/")}〜${ds[ds.length - 1].slice(5).replace("-", "/")}）</b>だけです。</p>
+  <div class="gridwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
+  ds.forEach(d => { const w = new Date(d + "T00:00:00").getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<small>${WD[w]}</small></th>`; });
+  h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
+  ds.forEach(d => { const all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].every(p => avOn(d, p)); h += `<td><input type="checkbox" class="daychk" data-act="avDay" data-d="${d}" ${all ? "checked" : ""} aria-label="${d}の全部の時限に◯"></td>`; });
+  h += `</tr></thead><tbody>`;
+  for (let p = 1; p <= 10; p++) {
+    h += `<tr><th scope="row" class="pl">${p}限<small>${P[p][0]}</small></th>`;
+    ds.forEach(d => { const on = avOn(d, p); h += `<td><button class="cell ${on ? "on" : ""}" data-act="avCell" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${d} ${p}限">${on ? "◯" : ""}</button></td>`; });
+    h += `</tr>`;
+  }
+  h += `</tbody></table></div><p style="font-size:13px;margin:10px 0 6px">この1ヶ月の◯：<b>${n}</b>時限</p>
+  <div class="list"><button class="btn full" data-act="avBack" data-s="${s.token}">編集に戻る</button><button class="btn primary full" data-act="close">閉じる</button></div>`;
+  const sc = document.querySelector("#overlay .gridwrap"), x = sc ? sc.scrollLeft : 0;
+  sheet(h);
+  const sc2 = document.querySelector("#overlay .gridwrap"); if (sc2) sc2.scrollLeft = x;
+}
+async function availToggle(t) {
+  const d = t.dataset.d, ps = t.dataset.act === "avDay" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [+t.dataset.p];
+  if (!AV.days.includes(d)) return toast("今日から1ヶ月より先の日は入れられません");
+  const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? t.checked : !avOn(d, ps[0]);
+  ps.forEach(p => on ? set.add(slotKey(+d.slice(8), p)) : set.delete(slotKey(+d.slice(8), p)));
+  drawAvail();
+  await setDoc(doc(db, "students", AV.s.token, "months", ym), { slots: [...set], updatedAt: serverTimestamp(), late: AV.m[ym].late });
+}
 // 1人分のQRコードを大きく出す。登録・再発行の直後と、編集画面の「QRコードを表示する」から
 function qrSheet(st, done = "") {
   sheet(`${done ? `<div class="banner ok" style="margin-top:0">${esc(done)}</div>` : ""}<h3 style="margin-top:0">${esc(st.name)} さんのQRコード</h3>
@@ -499,6 +541,9 @@ document.addEventListener("click", async e => {
     else if (a === "selAll") { document.querySelectorAll('[data-act="sel"]').forEach(c => S.sel.add(c.dataset.s)); render(); }
     else if (a === "print") { printCards(); }
     else if (a === "showQR") qrSheet(S.students.find(s => s.token === t.dataset.s));
+    else if (a === "availEdit") await availSheet(S.students.find(s => s.token === t.dataset.s));
+    else if (a === "avCell" || a === "avDay") await availToggle(t);
+    else if (a === "avBack") editSheet(S.students.find(s => s.token === t.dataset.s));
     else if (a === "printOne") { S.sel = new Set([t.dataset.s]); closeSheet(); render(); printCards(); }
     else if (a === "doPrint") window.print();
     else if (a === "save") {
