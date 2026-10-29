@@ -711,7 +711,8 @@ async function assign(tok, ds, p, gk, quiet) {
 //  ・高校生（教習生番号 3001〜3999）は優先：順番を lead 時限分だけ先にし、1週の上限も extraMax だけ多い（依頼者指定。不公平にならない程度）
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
-//  ・自分の枠で入りきらなかった分は、空いているほかの指導員への依頼として入れる（helpersOf・assignVia。依頼者指定）
+//  ・どんなに空きが少なくても、全員が週1回は乗れるようにする（最低ライン）。基本は担当制なので、ほかの指導員への依頼（helpersOf・assignVia）は
+//    担当の枠がどうしても無くて週1回に届かない人だけに使う（乱用しない。依頼者指定）
 // 自動で入れる枠の順番。ふつうは日時の早い順。みきわめ不合格で検定日（予定）が決まっている人は、
 // 検定日の前日の1〜7限を一番に、あとは検定日に近い日から（検定日当日以降には入れない。依頼者指定）
 function slotOrder(s, mk) {
@@ -723,7 +724,7 @@ function slotOrder(s, mk) {
 }
 // 高校生か（教習生番号が config の highSchool の範囲。依頼者指定：3001〜3999）
 const isHighSchool = s => { const h = (CFG.autoAssign || {}).highSchool, n = +s.studentNo; return !!h && n >= h.from && n <= h.to; };
-// 自分の枠で入りきらなかった分は、その時間に空いているほかの指導員への依頼として入れる（通常の教習だけ。依頼者指定）。
+// 担当の枠がどうしても無くて週1回に届かない人だけ、その時間に空いているほかの指導員への依頼として入れる（通常の教習だけ。依頼者指定）。
 // 相手の✕・自分の予約・頼まれた教習のある時間は使わない。1人の指導員に頼むのは1週 autoAssign.delegateMax 時限まで、少ない人から
 async function helpersOf() {
   const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
@@ -750,8 +751,8 @@ async function assignVia(s, ds, p, h) {
 }
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
-  const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, gk = new Map(), ng = new Set();
-  let made = 0, viaN = 0, helpers = [], hErr = "";
+  const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, minW = AA.minPerWeek ?? 1, gk = new Map(), ng = new Set();
+  let made = 0, viaN = 0, helpers = null, hErr = "";
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
   const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
@@ -766,55 +767,59 @@ async function autoAssign() {
     const types = specialTypes(s);
     return types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
   };
+  // 担当（自分）の枠に1つ入れる。"ok"＝入れた、"skip"＝学科の確認が要るので入れない、""＝入る枠がない
+  const ownOne = async (s, tries) => {
+    for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) for (const ty of tries) {
+      const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
+      if (ev.ok === false || ev.dark) continue;
+      const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
+      if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); return "skip"; }
+      if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
+      return "ok";
+    }
+    return "";
+  };
+  const ownSlots = s => days().reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(q => canBook(s, d, q)).length, 0);
+  // 担当の枠がどうしても無い時だけ、空いているほかの指導員に1つ依頼する（通常の教習だけ）
+  const viaOne = async s => {
+    if (AA.delegate === false) return "";
+    if (!helpers) { try { helpers = await helpersOf(); } catch (e) { helpers = []; noteIndex(e); hErr = friendlyError(e); } }
+    const cap = AA.delegateMax || 6;
+    for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
+      const ev = evaluate(s, d, q, true);
+      if (ev.ok === false || ev.dark) continue;
+      const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
+      if (!free.length) continue;
+      const r = gakkaAsk(s, d, [q]);
+      if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); return "skip"; }
+      await assignVia(s, d, q, free[0]); return "ok";
+    }
+    return "";
+  };
   try {
-    // 1回目：自分の枠に入れる
+    // 1回目：どんなに空きが少なくても、全員が週 minPerWeek 回は乗れるように（最低ライン。依頼者指定）。
+    // 入れる枠が少ない人から先に、まず担当の枠へ。担当の枠がどうしても無い人だけ、ほかの指導員に依頼する
+    for (let k = 0; k < minW; k++) {
+      const need = S.students.filter(s => weekCount(s.token) <= k && want(s)).sort((a, b) => ownSlots(a) - ownSlots(b));
+      for (const s of need) {
+        const tries = want(s); if (!tries) continue;
+        let r = await ownOne(s, tries);
+        if (!r && tries[0] === "") { r = await viaOne(s); if (r === "ok") viaN++; }
+        if (r === "ok") made++;
+      }
+    }
+    // 2回目：担当の枠に、予約の少ない人から1人ずつ交代で入れる（基本は担当制。ほかの指導員への依頼はしない。依頼者指定）
     for (let round = 0; round < 80; round++) {
       let progress = false;
       for (const s of order()) {
         const tries = want(s); if (!tries) continue;
-        const mk = s[`mikiwame${s.stage}`];
-        let hit = "";
-        for (const [d, q] of slotOrder(s, mk)) {
-          if (hit) break;
-          for (const ty of tries) {
-            const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
-            if (ev.ok === false || ev.dark) continue;
-            const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
-            if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); hit = "skip"; break; }
-            if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
-            hit = "ok"; break;
-          }
-        }
-        if (hit === "ok") { made++; progress = true; }
+        if (await ownOne(s, tries) === "ok") { made++; progress = true; }
       }
       if (!progress) break;
     }
-    // 2回目：入りきらなかった分を、空いているほかの指導員への依頼として入れる（通常の教習だけ）
-    if (AA.delegate !== false) {
-      try { helpers = await helpersOf(); } catch (e) { noteIndex(e); hErr = friendlyError(e); }
-      const cap = AA.delegateMax || 6;
-      for (let round = 0; round < 80 && helpers.length; round++) {
-        let progress = false;
-        for (const s of order()) {
-          const tries = want(s); if (!tries || tries[0] !== "") continue;
-          let hit = "";
-          for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
-            const ev = evaluate(s, d, q, true);
-            if (ev.ok === false || ev.dark) continue;
-            const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
-            if (!free.length) continue;
-            const r = gakkaAsk(s, d, [q]);
-            if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); hit = "skip"; break; }
-            await assignVia(s, d, q, free[0]); hit = "ok"; break;
-          }
-          if (hit === "ok") { made++; viaN++; progress = true; }
-        }
-        if (!progress) break;
-      }
-    }
   } finally { closeSheet(); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
-  const used = helpers.filter(h => h.n);
+  const used = (helpers || []).filter(h => h.n);
   sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
     ${viaN ? `<div class="banner info"><b>そのうち${viaN}件は、ほかの指導員への依頼として入れました</b>${used.map(h => `<br>${esc(h.name)} 指導員：${h.n}時限`).join("")}<br><span style="font-size:12px">マス目には「名字→依頼先」で出ます。依頼先を変える・やめる時は、そのマスを押してください。</span></div>` : ""}
     ${hErr ? `<div class="banner warn">ほかの指導員の空きを調べられませんでした（${esc(hErr)}）。</div>${indexBanner()}` : ""}
