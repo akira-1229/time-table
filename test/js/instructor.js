@@ -510,7 +510,7 @@ function render() {
     ds.forEach(d => {
       const lb = label(d, p), bs = bookingsAt(d, p), b = bs.length === 1 ? bs[0] : bookAt(d, p), sb = subAt(d, p);
       const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}">`;
-      if (!bs.length && sb) { h += `${td}<button class="wc bk subx" data-act="subInfo" data-id="${sb.id}" aria-label="${lb} ${esc(sb.subFromName || "")}指導員から頼まれた教習">${esc(String(sb.subStudent || "?").replace(/さん.*$/, "").slice(0, 4))}<small>代わり</small></button></td>`; return; }
+      if (!bs.length && sb) { h += `${td}<button class="wc bk subx" data-act="subInfo" data-id="${sb.id}" aria-label="${lb} ${esc(sb.subFromName || "")}指導員から頼まれた教習">${esc(String(sb.subStudent || "?").replace(/さん.*$/, "").slice(0, 4))}<small class="subtag">${esc(String(sb.subFromName || "").slice(0, 2))}依頼</small></button></td>`; return; }
       if (!bs.length && isOff(d, p)) { h += `${td}<button class="wc offx" disabled aria-label="${lb} 指導員の予定あり">✕<small>予定</small></button></td>`; return; }
       if (isPast(d)) {
         // 過ぎた日：予約の変更・取り消しはできない。押せるのは実施・欠席のチェックだけ（依頼者指定）
@@ -1086,7 +1086,7 @@ document.addEventListener("click", async e => {
       }
       } catch (e) { closeSheet(); noteIndex(e); render(); return toast(friendlyError(e)); }
       sheet(`<h3>他の人に依頼する</h3><p>${esc(nm(s))}<br>${md(b.date)} ${ps.join("・")}限${typeName(b) ? `（${typeName(b)}）` : ""}</p>
-        <p style="font-size:12px;color:var(--muted);margin-top:0">依頼した時限は、相手の指導員のマス目に「代わり」で出ます。担当（進み具合・実施のチェックなど）は今まで通りです。</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:0">依頼した時限は、相手の指導員のマス目に「（あなたの名字）依頼」の印付きで出ます。担当（進み具合・実施のチェックなど）は今まで通りです。</p>
         <div class="list">${rows.join("") || '<div class="hist"><div>ほかの指導員が登録されていません。</div></div>'}</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
     }
     else if (a === "delegateTo" || a === "undelegate") {
@@ -1100,7 +1100,7 @@ document.addEventListener("click", async e => {
     }
     else if (a === "subInfo") {
       const b = S.subs.find(x => x.id === t.dataset.id);
-      sheet(`<h3>${label(b.date, b.period)}　代わりの教習</h3><p><b>${esc(b.subStudent || "")}</b><br>${esc(b.subFromName || "")} 指導員から頼まれた教習です。${typeName(b) ? `<br>${typeName(b)}` : ""}</p>
+      sheet(`<h3>${label(b.date, b.period)}　依頼された教習</h3><p><b>${esc(b.subStudent || "")}</b><br>この教習生は、<b>${esc(b.subFromName || "")}さんからの依頼</b>です。${typeName(b) ? `<br>${typeName(b)}` : ""}</p>
         <p style="font-size:13px;color:var(--muted)">実施・欠席のチェックは、担当の指導員がします。</p><div class="list"><button class="btn full" data-act="close">閉じる</button></div>`);
     }
     else if (a === "pastCheck") {

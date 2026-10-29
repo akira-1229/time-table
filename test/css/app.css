@@ -363,7 +363,9 @@ th.tday small{color:var(--today)!important;font-weight:700}
 .cell.ng{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3)}
 .wc.offx{background:var(--lv3-soft);border-color:var(--lv3);color:var(--lv3);opacity:1;cursor:default}
 /* ほかの指導員から頼まれた教習（代わり） */
-.wc.bk.subx{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}
+.wc.bk.subx{background:var(--blue-soft);border-color:var(--blue);border-style:dashed;color:var(--blue);position:relative}
+/* ほかの指導員から頼まれた教習：点線の枠と、下に「（頼んだ人の名字）依頼」の青い札（一目で分かるように。依頼者指定） */
+.wc.bk.subx .subtag{display:inline-block;margin-top:1px;padding:0 3px;border-radius:3px;background:var(--blue);color:var(--on-accent,#fff);font-weight:700;white-space:nowrap}
 /* 教習生の登録：和暦6桁の日付欄。正しくない日付は赤枠 */
 .wdate.ng{border-color:var(--lv3);background:var(--lv3-soft)}
 
