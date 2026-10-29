@@ -301,13 +301,15 @@ function dateBlock(s, ds) {
   if (s.stage === 1 && s.startDate && ds < s.startDate) return `教習開始日（${md(s.startDate)}）より前です`;
   return "";
 }
-function evaluate(s, ds, p) {
+// viaSub：ほかの指導員に依頼して入れる時（自動割り振り）。自分の✕・予約は見ない（相手が空いているかは呼ぶ側で見る）
+function evaluate(s, ds, p, viaSub) {
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
   { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
-  if (isOff(ds, p)) return { ok: false, reason: "指導員の予定（✕）が入っている枠です" };
-  if (subAt(ds, p)) return { ok: false, reason: "ほかの指導員から頼まれた教習が入っている時間です" };
+  if (!viaSub && isOff(ds, p)) return { ok: false, reason: "指導員の予定（✕）が入っている枠です" };
+  if (!viaSub && subAt(ds, p)) return { ok: false, reason: "ほかの指導員から頼まれた教習が入っている時間です" };
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
-  if (bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
+  if (!viaSub && bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
+  if (viaSub && S.bookings.some(b => b.token === s.token && b.date === ds && b.period === p)) return { ok: false, reason: "この時限はすでに予約が入っています" };
   if (dayCount(s.token, ds) >= dayMax(s)) return { ok: false, reason: `この日は上限の${dayMax(s)}時限まで入っています` };
   if ((CFG.noTripleStages || []).includes(s.stage)) {
     const ps = [...dayPeriods(s.token, ds), p].sort((a, b) => a - b);
@@ -709,6 +711,7 @@ async function assign(tok, ds, p, gk, quiet) {
 //  ・高校生（教習生番号 3001〜3999）は優先：順番を lead 時限分だけ先にし、1週の上限も extraMax だけ多い（依頼者指定。不公平にならない程度）
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
+//  ・自分の枠で入りきらなかった分は、空いているほかの指導員への依頼として入れる（helpersOf・assignVia。依頼者指定）
 // 自動で入れる枠の順番。ふつうは日時の早い順。みきわめ不合格で検定日（予定）が決まっている人は、
 // 検定日の前日の1〜7限を一番に、あとは検定日に近い日から（検定日当日以降には入れない。依頼者指定）
 function slotOrder(s, mk) {
@@ -720,24 +723,56 @@ function slotOrder(s, mk) {
 }
 // 高校生か（教習生番号が config の highSchool の範囲。依頼者指定：3001〜3999）
 const isHighSchool = s => { const h = (CFG.autoAssign || {}).highSchool, n = +s.studentNo; return !!h && n >= h.from && n <= h.to; };
+// 自分の枠で入りきらなかった分は、その時間に空いているほかの指導員への依頼として入れる（通常の教習だけ。依頼者指定）。
+// 相手の✕・自分の予約・頼まれた教習のある時間は使わない。1人の指導員に頼むのは1週 autoAssign.delegateMax 時限まで、少ない人から
+async function helpersOf() {
+  const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
+  const yms = [...new Set(days().map(d => d.slice(0, 7)))];
+  for (const i of ins) {
+    i.busy = new Set(); i.n = 0;
+    for (const ym of yms) {
+      const od = await getDoc(doc(db, "offs", `${i.uid}_${ym}`));
+      (od.exists() ? od.data().slots || [] : []).forEach(k => { const [dd, q] = k.split("-"); i.busy.add(`${ym}-${String(dd).padStart(2, "0")}|${q}`); });
+    }
+    const own = await getDocs(query(collectionGroup(db, "bookings"), where("instructorUid", "==", i.uid), where("weekId", "==", wid())));
+    own.docs.map(d => d.data()).filter(b => b.status !== "cancelled" && !b.subUid).forEach(b => i.busy.add(`${b.date}|${b.period}`));
+    const sub = await getDocs(query(collectionGroup(db, "bookings"), where("subUid", "==", i.uid), where("weekId", "==", wid())));
+    sub.docs.map(d => d.data()).filter(b => b.status !== "cancelled").forEach(b => { i.busy.add(`${b.date}|${b.period}`); if (b.subFrom === S.uid) i.n++; });
+  }
+  return ins;
+}
+async function assignVia(s, ds, p, h) {
+  const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status: "draft", cancelRequested: false, result: null, stage: s.stage,
+    subUid: h.uid, subName: h.name, subFrom: S.uid, subFromName: S.me.name, subStudent: nm(s), createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  const ref = await addDoc(collection(db, "students", s.token, "bookings"), data);
+  S.bookings.push({ id: ref.id, token: s.token, ...data }); S.pending.push(S.bookings.at(-1));
+  h.busy.add(`${ds}|${p}`); h.n++;
+}
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
   const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, gk = new Map(), ng = new Set();
-  let made = 0;
+  let made = 0, viaN = 0, helpers = [], hErr = "";
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
+  // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
+  const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
+  const order = () => S.students.slice().sort((a, b) => key(a) - key(b) || isHighSchool(b) - isHighSchool(a) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
+  // まだ入れてよい人か（入れてよければ、入れる教習の種類の候補を返す）
+  const want = s => {
+    if (weekCount(s.token) >= max + (isHighSchool(s) ? hs.extraMax || 0 : 0) || gk.has(s.token)) return null;
+    const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
+    if (mk && mk.passed) return null;
+    if (!pl.ok) { ng.add(s.token); return null; }
+    if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s)) return null;
+    const types = specialTypes(s);
+    return types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
+  };
   try {
+    // 1回目：自分の枠に入れる
     for (let round = 0; round < 80; round++) {
       let progress = false;
-      // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
-      const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
-      const list = S.students.slice().sort((a, b) => key(a) - key(b) || isHighSchool(b) - isHighSchool(a) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
-      for (const s of list) {
-        if (weekCount(s.token) >= max + (isHighSchool(s) ? hs.extraMax || 0 : 0) || gk.has(s.token)) continue;
-        const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
-        if (mk && mk.passed) continue;
-        if (!pl.ok) { ng.add(s.token); continue; }
-        if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s)) continue;
-        const types = specialTypes(s), tries = types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
+      for (const s of order()) {
+        const tries = want(s); if (!tries) continue;
+        const mk = s[`mikiwame${s.stage}`];
         let hit = "";
         for (const [d, q] of slotOrder(s, mk)) {
           if (hit) break;
@@ -754,9 +789,35 @@ async function autoAssign() {
       }
       if (!progress) break;
     }
+    // 2回目：入りきらなかった分を、空いているほかの指導員への依頼として入れる（通常の教習だけ）
+    if (AA.delegate !== false) {
+      try { helpers = await helpersOf(); } catch (e) { noteIndex(e); hErr = friendlyError(e); }
+      const cap = AA.delegateMax || 6;
+      for (let round = 0; round < 80 && helpers.length; round++) {
+        let progress = false;
+        for (const s of order()) {
+          const tries = want(s); if (!tries || tries[0] !== "") continue;
+          let hit = "";
+          for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
+            const ev = evaluate(s, d, q, true);
+            if (ev.ok === false || ev.dark) continue;
+            const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
+            if (!free.length) continue;
+            const r = gakkaAsk(s, d, [q]);
+            if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); hit = "skip"; break; }
+            await assignVia(s, d, q, free[0]); hit = "ok"; break;
+          }
+          if (hit === "ok") { made++; viaN++; progress = true; }
+        }
+        if (!progress) break;
+      }
+    }
   } finally { closeSheet(); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
+  const used = helpers.filter(h => h.n);
   sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
+    ${viaN ? `<div class="banner info"><b>そのうち${viaN}件は、ほかの指導員への依頼として入れました</b>${used.map(h => `<br>${esc(h.name)} 指導員：${h.n}時限`).join("")}<br><span style="font-size:12px">マス目には「名字→依頼先」で出ます。依頼先を変える・やめる時は、そのマスを押してください。</span></div>` : ""}
+    ${hErr ? `<div class="banner warn">ほかの指導員の空きを調べられませんでした（${esc(hErr)}）。</div>${indexBanner()}` : ""}
     ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため入れていません</b>${[...gk].map(([t, n]) => `<br>${esc(nm(ST(t)))}：${n}`).join("")}<br><span style="font-size:12px">学科の受講を確かめてから、手で入れてください。</span></div>` : ""}
     ${ng.size ? `<div class="banner warn"><b>教習の順番がずれているため入れていません</b>${[...ng].map(t => `<br>${esc(nm(ST(t)))}`).join("")}</div>` : ""}
     ${none.length ? `<div class="banner info"><b>この週に1つも入らなかった教習生</b>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
