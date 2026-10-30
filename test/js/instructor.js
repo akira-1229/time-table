@@ -431,6 +431,16 @@ function balanceHtml() {
   return h + `</div></details>`;
 }
 
+// 予定表の右側（スマホはマス目の下）に、教習生ごとのこの週の回数を一覧で出す（「山田さん（0012）　3回」。依頼者指定）。
+// 少ない人から順。0回は赤。押すとその人を選んで割り当てられる
+function countListHtml() {
+  if (!S.students.length) return "";
+  const rows = S.students.map(s => ({ s, n: weekCount(s.token), d: S.bookings.filter(b => b.token === s.token && b.status === "draft").length }))
+    .sort((a, b) => a.n - b.n || String(a.s.studentNo || "").localeCompare(String(b.s.studentNo || "")));
+  return `<div class="cnt"><div class="cnt-h">今週の回数<small>（${rows.length}人・未確定を含む）</small></div>${rows.map(r =>
+    `<button class="cnt-r${r.n === 0 ? " zero" : ""}${S.pick === r.s.token ? " on" : ""}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(nm(r.s))}</span><b>${r.n}回</b></button>`).join("")}</div>`;
+}
+
 /* ---------- 画面 ---------- */
 function render() {
   if (!S.uid) return;
@@ -575,8 +585,8 @@ function render() {
   const confH = h;
   // PC表示：左にマス目、右に集計・お知らせ・教習生の一覧・確定ボタン。スマホは上から順に並べる
   root.innerHTML = top + (isPC()
-    ? `<div class="asg"><div class="asg-main">${gridH}</div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
-    : alertsH + sideTop + gridH + listH + confH) + `</div></section>`;
+    ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}</div>${countListHtml()}</div></div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
+    : alertsH + sideTop + gridH + countListHtml() + listH + confH) + `</div></section>`;
 }
 
 function slotSheet(ds, p, type = "normal", start) {
