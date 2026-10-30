@@ -7,7 +7,7 @@ import {
 import {
   CFG, app as fbApp, db, WD, P, ymOf, dateStr, parseDate, addDays, mondayOf, today, md, label, slotKey, esc,
   toast, sheet, closeSheet, onOverlayClose, friendlyError, enablePush, pushReasonText, listenForeground,
-  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, kentei1AgeNg, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
+  installButton, firstVisitInstall, indexLinkOf, sendNow, pushStatusHtml, isPC, applyView, onViewChange, lookSettingsHtml, getPref, isMikiwame, kenteiOn, kentei1AgeNg, kentei2Limit, kentei2LimitNg, kentei2Soon, KENTEI2_MSG, lessonPlan, lessonItems, nextSpecial, isHwType, noRange, lessonMin, doneOf, bookingEnd, paceOf, paceText, karimenExpiryOf, expiriesOf, expiryText, trackAccess, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
@@ -74,6 +74,7 @@ function staffItems() {
   if (unchecked.length) items.push([`unc:${unchecked.map(it => it.bookings[0].id).join(",")}`, noticeRow("実施チェック", `終わった教習のチェック待ち ${unchecked.length}件`, "warn")]);
   S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days)
     .forEach(([s, e]) => items.push([`ex:${s.token}:${e.key}:${e.date}`, noticeRow("期限", `${nsName(s)}<small>${e.label} ${mdS(e.date)}（${e.days < 0 ? `${-e.days}日過ぎ` : e.days === 0 ? "今日" : `あと${e.days}日`}）</small>`, "warn")]));
+  S.students.map(s => [s, kentei2Soon(s)]).filter(([, k]) => k).forEach(([s, k]) => items.push([`k2:${s.token}:${k.limit}`, noticeRow("検定期限", `${nsName(s)}<small>卒業検定の期限 ${mdS(k.limit)}（${k.days < 0 ? `${-k.days}日過ぎ` : k.days === 0 ? "今日" : `あと${k.days}日`}）</small>`, "warn")]));
   S.students.map(s => [s, paceOf(s)]).filter(([, pc]) => pc).forEach(([s, pc]) => items.push([`pace:${s.token}:${pc.label}`, noticeRow("ペース", `${nsName(s)}<small>${pc.label}に間に合わない見込み${pc.eta ? `（${mdS(pc.eta)}）` : ""}</small>`, "warn")]));
   S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok).forEach(([s, pl]) => items.push([`ng:${s.token}:${pl.reason}`, noticeRow("順番のずれ", `${nsName(s)}<small>${esc(pl.reason)}</small>`, "warn")]));
   const gones = S.bookings.filter(goneDraft);
@@ -469,6 +470,8 @@ function render() {
   if (kdue.length) h += `<div class="banner warn"><b>検定の結果を入れてください</b>${kdue.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${md(s[`mikiwame${s.stage}`].kenteiDate)} ${KN(s)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="kenteiFail" data-s="${s.token}">不合格</button><button class="btn accent" data-act="kenteiPass" data-s="${s.token}">合格</button></span></div>`).join("")}</div>`;
   if (kt.length) h += `<div class="banner ok"><b>本日、検定日の方</b><ul style="margin:6px 0 0;padding-left:1.4em">${kt.map(s => `<li>${esc(nm(s))}（第${[1, 2].find(n => s[`mikiwame${n}`] && s[`mikiwame${n}`].kenteiDate === dateStr(today()))}段階）</li>`).join("")}</ul></div>`;
   const exp = S.students.flatMap(s => expiriesOf(s).map(e => [s, e])).sort((a, b) => a[1].days - b[1].days);
+  const k2 = S.students.map(s => [s, kentei2Soon(s)]).filter(([, k]) => k).sort((a, b) => a[1].days - b[1].days);
+  if (k2.length) h += `<div class="banner warn"><b>卒業検定の期限が近い教習生がいます</b><br><span style="font-size:13px">${KENTEI2_MSG}</span>${k2.map(([s, k]) => `<br>${esc(nm(s))}：検定期限 ${md(k.limit)}（<span style="${k.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${k.days < 0 ? `${-k.days}日過ぎています` : k.days === 0 ? "今日まで" : `あと${k.days}日`}</span>）`).join("")}</div>`;
   if (exp.length) h += `<div class="banner warn"><b>期限が近い教習生がいます（${CFG.expiryWarnDays || 30}日以内）</b>${exp.map(([s, e]) => `<br>${esc(nm(s))}：<span style="${e.days <= 7 ? "color:var(--lv3);font-weight:700" : ""}">${esc(expiryText(e))}</span>`).join("")}</div>`;
   const slow = S.students.map(s => [s, paceOf(s)]).filter(([, pc]) => pc);
   if (slow.length) h += `<div class="banner warn"><b>このペースでは期限に間に合わない教習生がいます</b>${slow.map(([s, pc]) => `<br>${esc(nm(s))}：${esc(paceText(pc))}`).join("")}<br><span style="font-size:12px">これまでの1日あたりの時限数から見込みを出しています。空き時間を増やしてもらうなど、早めに相談してください。</span></div>`;
@@ -958,14 +961,20 @@ async function markResult(ids, result, mk = null) {
 // みきわめの教習を「実施」にする時のフォーム（合否・検定日・学科及び効果測定）
 // 第1段階の検定日の欄：生年月日を持たせて、18歳の誕生日より前の日を入れた時にすぐ警告する（高校生。依頼者指定）
 const ageAttr = s => s.stage === 1 && s.birthDate ? ` data-birth="${esc(s.birthDate)}"` : "";
-const ageOk = el => { const ng = el && el.dataset.birth && kentei1AgeNg(el.dataset.birth, el.value); return !ng || confirm(`${ng}\n\nこのまま検定日を入れますか？`); };
+// 第2段階の検定日の欄：みきわめ合格日から3ヶ月の期限を持たせる（超えたら入れられない。依頼者指定）
+const limAttr = (s, passDate) => s.stage === 2 && passDate ? ` data-limit="${karimenExpiryOf(passDate, CFG.kentei2LimitMonths || 3)}"` : "";
+const ageOk = el => {
+  const lim = el && el.dataset.limit && kentei2LimitNg(el.dataset.limit, el.value);
+  if (lim) { toast(lim); dateHint(el); el.focus(); return false; }
+  const ng = el && el.dataset.birth && kentei1AgeNg(el.dataset.birth, el.value); return !ng || confirm(`${ng}\n\nこのまま検定日を入れますか？`);
+};
 function mikiwameSheet(s, it, ids) {
   const r = (n, v, t) => `<label class="radio"><input type="radio" name="${n}" value="${v}"> ${t}</label>`;
   sheet(`<h3>みきわめ（第${s.stage}段階 ${it.no}時限目）</h3>
   <p>${esc(nm(s))}<br>${md(it.date)} ${it.bookings.map(b => b.period).join("・")}限</p>
   <div class="field"><label>みきわめの結果</label><div class="radios">${r("mk_pass", "1", "合格")}${r("mk_pass", "0", "不合格")}</div></div>
   ${s[`kenteiPlan${s.stage}`] ? `<p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">決まっている検定日：${md(s[`kenteiPlan${s.stage}`])}（不合格の時は取り消します）</p>` : ""}
-  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date" value="${esc(s[`kenteiPlan${s.stage}`] || "")}"${ageAttr(s)}><div class="agewarn"></div></div>
+  <div id="mk_kentei" hidden><div class="field"><label for="mk_date">検定日</label><input id="mk_date" type="date" value="${esc(s[`kenteiPlan${s.stage}`] || "")}"${ageAttr(s)}${limAttr(s, it.date)}><div class="agewarn"></div></div>
     <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="mk_und"> 検定日は未確定</label></div>
   <div class="field"><label>学科及び効果測定</label><div class="radios">${r("mk_gakka", "1", "終わっている")}${r("mk_gakka", "0", "終わっていない")}</div></div>
   <div class="list"><button class="btn accent full" data-act="mkOk" data-ids="${ids.join(",")}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
@@ -1246,7 +1255,7 @@ document.addEventListener("click", async e => {
     else if (a === "kenteiFail") {
       const st = ST(t.dataset.s), mk = st[`mikiwame${st.stage}`];
       sheet(`<h3>${KN(st)} 不合格</h3><p>${esc(nm(st))}（検定日 ${md(mk.kenteiDate)}）</p>
-        <div class="field"><label for="kf_date">次の検定日</label><input id="kf_date" type="date"${ageAttr(st)}><div class="agewarn"></div></div>
+        <div class="field"><label for="kf_date">次の検定日</label><input id="kf_date" type="date"${ageAttr(st)}${limAttr(st, mk.date)}><div class="agewarn"></div></div>
         <label class="radio" style="margin:-4px 0 12px"><input type="checkbox" id="kf_und"> 次の検定日は未確定</label>
         <div class="list"><button class="btn accent full" data-act="kfOk" data-s="${st.token}">OK</button><button class="btn full" data-act="close">やめる</button></div>`);
     }
@@ -1345,11 +1354,17 @@ document.addEventListener("click", async e => {
 });
 // 「今週の割り振り」を開いたかどうかを覚えておく（描き直しても閉じないように）
 document.addEventListener("toggle", e => { if (e.target.classList && e.target.classList.contains("bal")) S.balOpen = e.target.open; }, true);
-const ageHint = el => { const w = el.parentElement.querySelector(".agewarn"), ng = kentei1AgeNg(el.dataset.birth, el.value); if (w) w.innerHTML = ng ? `<p style="color:var(--lv3);font-size:13px;font-weight:700;margin:6px 0 0">⚠ ${esc(ng)}</p>` : ""; if (ng) toast(ng); };
+// 検定日を入れた瞬間に、欄の下へ赤字で出す（第1段階は18歳の誕生日、第2段階はみきわめ合格日から3ヶ月）
+function dateHint(el) {
+  const w = el.parentElement.querySelector(".agewarn");
+  const ng = (el.dataset.limit && kentei2LimitNg(el.dataset.limit, el.value)) || (el.dataset.birth && kentei1AgeNg(el.dataset.birth, el.value)) || "";
+  if (w) w.innerHTML = ng ? `<p style="color:var(--lv3);font-size:13px;font-weight:700;margin:6px 0 0">⚠ ${esc(ng)}</p>` : "";
+  if (ng) toast(ng);
+}
 // みきわめのフォーム：合格の時だけ検定日を出す。「未確定」なら日付は入れない
 document.addEventListener("change", e => {
   if (e.target.name === "mk_pass") document.getElementById("mk_kentei").hidden = e.target.value !== "1";
-  if (e.target.dataset && e.target.dataset.birth) ageHint(e.target);
+  if (e.target.dataset && (e.target.dataset.birth || e.target.dataset.limit)) dateHint(e.target);
   if (e.target.id === "gk_chk") document.getElementById("gk_ok").disabled = !e.target.checked;
   if (e.target.id === "kf_und") { const d = document.getElementById("kf_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }
   if (e.target.id === "mk_und") { const d = document.getElementById("mk_date"); d.disabled = e.target.checked; if (e.target.checked) d.value = ""; }

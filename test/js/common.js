@@ -119,6 +119,17 @@ export function ageOf(birth, on = today()) {
   if (on.getDate() < b.getDate()) m--;
   return m < 0 ? null : { y: Math.floor(m / 12), m: m % 12, months: m };
 }
+// 卒業検定の期限：第2段階のみきわめに合格した日から3ヶ月（その日を1日目に数えて、3ヶ月後の同じ日の前日まで。依頼者指定）
+export const kentei2Limit = st => { const m = st && st.mikiwame2; return m && m.passed && m.date ? karimenExpiryOf(m.date, CFG.kentei2LimitMonths || 3) : null; };
+export const kentei2LimitNg = (limit, date) => limit && date && date > limit
+  ? `検定日（${md(date)}）が、みきわめに合格した日から${CFG.kentei2LimitMonths || 3}ヶ月を超えています。卒業検定は ${md(limit)} までに受けなければなりません。日付を入れ直してください。` : "";
+// 検定期限が迫っている（kentei2LimitWarnDays 日以内）第2段階の教習生。検定に合格した人は除く
+export const kentei2Soon = st => {
+  const lim = kentei2Limit(st); if (!lim || st.stage !== 2 || st.graduatedOn || (st.mikiwame2 || {}).kenteiResult === "pass") return null;
+  const days = Math.round((parseDate(lim) - today()) / 86400000);
+  return days <= (CFG.kentei2LimitWarnDays || 30) ? { limit: lim, days } : null;
+};
+export const KENTEI2_MSG = "みきわめに合格した日から3か月間が検定期限です。この期限を過ぎると、検定は受けられません";
 // 第1段階の検定日が18歳の誕生日より前なら、警告の文を返す（誕生日当日は受けられる。2月29日生まれは平年は3月1日）
 export function kentei1AgeNg(birth, date) {
   const n = CFG.kentei1MinAge || 18;
@@ -499,7 +510,8 @@ export function progressBarHtml(s, o = {}) {
     const name = n === 1 ? "修了検定" : "卒業検定", state = passed ? "pass" : kd && kd !== "未定" ? "set" : "";
     const top = `<div class="pgtop"><b class="t${n}">第${n}段階 ${d}/${min}</b><span class="pgd">${passed ? `${name} 合格` : kd === "未定" ? `${name} 未定` : kd ? `${name} ${longDate(kd)}` : ""}</span></div>`;
     const bar = `<div class="pgrow"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="c${n}${i < d ? " f" : i < d + bk ? " b" : ""}${i >= min ? " x" : ""}${i === cur ? " cur" : ""}${i === min - 1 ? " mk" : ""}">${i === min - 1 ? "みきわめ" : ""}</i>`).join("")}</div><span class="pgflag f${n} ${state}" title="${name}">${FLAG}</span></div>`;
-    const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
+    const k2 = n === 2 && o.kentei === "staff" ? kentei2Soon(s) : null;   // 卒業検定の期限（みきわめ合格から3ヶ月）が迫っている時だけ
+    const bottom = n === 1 ? dt("開始", s.startDate) : `${dt("仮免期限", s.karimenExpiry, exp("karimenExpiry"))}${k2 ? dt("検定期限", k2.limit, true) : ""}${dt("教習期限", s.deadline, exp("deadline")).replace('class="pgd', 'class="pgd end')}`;
     // 次の教習：今の位置のマスの下に「↑ 日付」（右半分なら右寄せにしてはみ出さないようにする）
     const nt = cur >= 0 && o.next;
     const next = nt ? `<div class="pgrow pgnext"><div class="pgseg">${Array.from({ length: cells }, (_, i) => `<i class="${i === min - 1 ? "mk" : ""}">${i === cur ? (cur > cells / 2 ? `<span class="r">${nt} ↑</span>` : `<span>↑ ${nt}</span>`) : ""}</i>`).join("")}</div><span class="pgflag"></span></div>` : "";
