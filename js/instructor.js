@@ -501,6 +501,7 @@ function render() {
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">数字と棒の長さは、その枠に入れる人数（この週の最多${maxN}人を基準に色分け）</div>`;
   }
   if ((CFG.autoAssign || {}).weeklyMax && !S.confirmed) h += `<button class="btn primary full" style="margin-bottom:8px" data-act="autoAssign">この週を自動で割り振る（未確定で入ります）</button>`;
+  if (!S.confirmed && gkNow().length) h += `<button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gkNow().length}人）</button>`;
   h += weekNav + `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
   const tds = dateStr(today()), tc = d => d === tds ? "tday" : "";
   ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
@@ -748,12 +749,47 @@ async function assignVia(s, ds, p, h) {
     subUid: h.uid, subName: h.name, subFrom: S.uid, subFromName: S.me.name, subStudent: nm(s), createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
   const ref = await addDoc(collection(db, "students", s.token, "bookings"), data);
   S.bookings.push({ id: ref.id, token: s.token, ...data }); S.pending.push(S.bookings.at(-1));
-  h.busy.add(`${ds}|${p}`); h.n++;
+  if (h.busy) h.busy.add(`${ds}|${p}`); h.n = (h.n || 0) + 1;
+}
+// 自動割り振りで、学科の確認が要るため入れなかった教習生（S.gkList）を、一覧から1人ずつ確認して入れる（依頼者指定）。
+// 「はい」なら自動割り振りで見つけておいた枠にそのまま入れる。「いいえ」なら入れない
+const gkNow = () => (S.gkList || []).filter(x => x.week === wid() && ST(x.token));
+function gkListSheet() {
+  const L = gkNow();
+  if (!L.length) { closeSheet(); render(); return toast("学科の確認が必要な教習生は、もういません"); }
+  sheet(`<h3>学科の確認が必要な教習生（${L.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">学科の受講を確かめてから入れます。「順番に確認する」で1人ずつ確認できます。</p>
+    <div class="list">${L.map((x, i) => `<div class="item"><div><div class="t">${esc(nm(ST(x.token)))}</div><div class="s">${x.text}・${label(x.d, x.q)}${x.ty ? `（${PT(x.ty).label}）` : ""}${x.h ? `・${esc(x.h.name)} 指導員に依頼` : ""}</div></div><button class="btn" data-act="gkAsk" data-i="${i}">確認</button></div>`).join("")}</div>
+    <div class="list" style="margin-top:10px"><button class="btn primary full" data-act="gkAsk" data-i="0" data-seq="1">順番に確認する</button><button class="btn full" data-act="close">閉じる</button></div>`);
+}
+function gkAskSheet(i, seq) {
+  const L = gkNow(), x = L[i]; if (!x) return gkListSheet();
+  const s = ST(x.token), rules = gakkaAsk(s, x.d, x.ty ? span(x.q, x.ty) : [x.q], x.ty);
+  sheet(`<h3>学科の受講確認${seq ? `（${i + 1}/${L.length}）` : ""}</h3><p>${esc(nm(s))}（第${s.stage}段階 ${x.text}）<br>入れる枠：${label(x.d, x.q)}${x.ty ? `（${PT(x.ty).label}）` : ""}${x.h ? `・${esc(x.h.name)} 指導員に依頼` : ""}</p>
+    ${rules.map(r => `<p style="font-size:16px"><b>${esc(r.ask || `学科の${r.gakka}教程は終了していますか？`)}</b></p>`).join("")}
+    <label class="ackchk">はい <input type="checkbox" id="gk_chk"></label>
+    <div class="list" style="margin-top:10px"><button class="btn primary full" id="gk_ok" data-act="gkYes" data-i="${i}" data-seq="${seq ? 1 : ""}" disabled>OK（この枠に入れる）</button>
+    <button class="btn full" data-act="gkNo" data-i="${i}" data-seq="${seq ? 1 : ""}">終わっていない（入れない）</button><button class="btn full" data-act="gkList">一覧に戻る</button></div>`);
+}
+// 見つけておいた枠がその後ほかの人で埋まっていたら、その人の入れる別の枠（担当の枠）を探して入れる
+async function gkPlace(x) {
+  const s = ST(x.token), ok = (d, q, h) => { const ev = x.ty ? evaluatePair(s, d, q, x.ty) : evaluate(s, d, q, h); return ev.ok !== false && !ev.dark; };
+  let d = x.d, q = x.q, h = x.h;
+  if (!ok(d, q, !!h)) {
+    h = null;
+    const alt = slotOrder(s, s[`mikiwame${s.stage}`]).find(([dd, qq]) => ok(dd, qq, false));
+    if (!alt) return toast(`${nm(s)}：入れられる枠がもうありません（手で入れてください）`);
+    [d, q] = alt;
+  }
+  if (x.ty) await assignPair(x.token, d, q, x.ty, false, true, true);
+  else if (h) await assignVia(s, d, q, h);
+  else await assign(x.token, d, q, true, true);
+  toast(`${label(d, q)} に${nm(s)}を入れました`);
 }
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
   const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, minW = AA.minPerWeek ?? 1, gk = new Map(), ng = new Set();
   let made = 0, viaN = 0, helpers = null, hErr = "";
+  const held = new Set();   // 学科の確認待ちの人のために取っておく枠（確認した時にそのまま入れられるように）
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
   const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
@@ -777,11 +813,11 @@ async function autoAssign() {
   // 担当（自分）の枠に1つ入れる。"ok"＝入れた、"skip"＝学科の確認が要るので入れない、""＝入る枠がない
   const ownOne = async (s, tries) => {
     for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) for (const ty of tries) {
-      if (gapNg(s, d, ty ? span(q, ty) : [q])) continue;
+      if (gapNg(s, d, ty ? span(q, ty) : [q]) || (ty ? span(q, ty) : [q]).some(x => held.has(`${d}|${x}`))) continue;
       const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
       if (ev.ok === false || ev.dark) continue;
       const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
-      if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); return "skip"; }
+      if (r.length) { gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty }); (ty ? span(q, ty) : [q]).forEach(x => held.add(`${d}|${x}`)); return "skip"; }
       if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
       return "ok";
     }
@@ -800,7 +836,7 @@ async function autoAssign() {
       const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
       if (!free.length) continue;
       const r = gakkaAsk(s, d, [q]);
-      if (r.length) { gk.set(s.token, r.map(x => `${x.no}時限目`).join("・")); return "skip"; }
+      if (r.length) { gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty: "", h: { uid: free[0].uid, name: free[0].name } }); return "skip"; }
       await assignVia(s, d, q, free[0]); return "ok";
     }
     return "";
@@ -826,13 +862,13 @@ async function autoAssign() {
       }
       if (!progress) break;
     }
-  } finally { closeSheet(); render(); }
+  } finally { closeSheet(); S.gkList = [...gk].map(([token, v]) => ({ token, week: wid(), ...v })); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
   const used = (helpers || []).filter(h => h.n);
   sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
     ${viaN ? `<div class="banner info"><b>そのうち${viaN}件は、ほかの指導員への依頼として入れました</b>${used.map(h => `<br>${esc(h.name)} 指導員：${h.n}時限`).join("")}<br><span style="font-size:12px">マス目には「名字→依頼先」で出ます。依頼先を変える・やめる時は、そのマスを押してください。</span></div>` : ""}
     ${hErr ? `<div class="banner warn">ほかの指導員の空きを調べられませんでした（${esc(hErr)}）。</div>${indexBanner()}` : ""}
-    ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため入れていません</b>${[...gk].map(([t, n]) => `<br>${esc(nm(ST(t)))}：${n}`).join("")}<br><span style="font-size:12px">学科の受講を確かめてから、手で入れてください。</span></div>` : ""}
+    ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため、まだ入れていません（${gk.size}人）</b>${[...gk].map(([t, v]) => `<br>${esc(nm(ST(t)))}：${v.text}`).join("")}</div><button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gk.size}人）を確認する</button>` : ""}
     ${ng.size ? `<div class="banner warn"><b>教習の順番がずれているため入れていません</b>${[...ng].map(t => `<br>${esc(nm(ST(t)))}`).join("")}</div>` : ""}
     ${none.length ? `<div class="banner info"><b>この週に1つも入らなかった教習生</b>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
@@ -1215,7 +1251,32 @@ document.addEventListener("click", async e => {
       await updateDoc(doc(db, "students", st.token), upd);
       Object.assign(st, upd); closeSheet(); render(); toast(`${nm(st)}の${KN(st)}を不合格として記録しました`);
     }
-    else if (a === "autoAssign") { if (confirm("この週の空いている枠に、ルールどおり自動で予約を入れます（未確定で入ります。確定するまで教習生には通知されません）。よろしいですか？")) await autoAssign(); }
+    else if (a === "autoAssign") {
+      // もう一度押した時：未確定の予約を消して組み直すか、今の予約に足すかを選ぶ（依頼者と確認）
+      if (S.bookings.some(b => b.status === "draft" && !b.result)) sheet(`<h3>この週を自動で割り振る</h3><p>この週には、もう未確定の予約が入っています。</p>
+        <div class="list"><button class="btn primary full" data-act="autoRedo">未確定の予約を全部消して、最初から組み直す</button><button class="btn full" data-act="autoAdd">今の予約はそのままで、足りない分だけ足す</button><button class="btn full" data-act="close">やめる</button></div>
+        <p style="font-size:12px;color:var(--muted)">組み直すと、手で入れた未確定の予約も消えます。確定済みの予約はそのままです。</p>`);
+      else if (confirm("この週の空いている枠に、ルールどおり自動で予約を入れます（未確定で入ります。確定するまで教習生には通知されません）。よろしいですか？")) await autoAssign();
+    }
+    else if (a === "autoAdd") { closeSheet(); await autoAssign(); }
+    else if (a === "autoRedo") {
+      t.disabled = true;
+      const drafts = S.bookings.filter(b => b.status === "draft" && !b.result);
+      for (const b of drafts) await deleteDoc(doc(db, "students", b.token, "bookings", b.id));
+      const ids = new Set(drafts.map(b => b.id));
+      S.bookings = S.bookings.filter(b => !ids.has(b.id)); S.pending = S.pending.filter(b => !ids.has(b.id)); S.gkList = [];
+      closeSheet(); await autoAssign();
+    }
+    else if (a === "gkList") gkListSheet();
+    else if (a === "gkAsk") gkAskSheet(+t.dataset.i, !!t.dataset.seq);
+    else if (a === "gkYes" || a === "gkNo") {
+      if (a === "gkYes" && !document.getElementById("gk_chk")?.checked) return;
+      const L = gkNow(), i = +t.dataset.i, x = L[i], seq = !!t.dataset.seq; if (!x) return gkListSheet();
+      t.disabled = true;
+      if (a === "gkYes") await gkPlace(x);
+      S.gkList = S.gkList.filter(y => y !== x); render();
+      if (seq && gkNow().length) gkAskSheet(Math.min(i, gkNow().length - 1), true); else gkListSheet();
+    }
     else if (a === "confirm") { t.disabled = true; await confirmWeek(); }
     else if (a === "markDone" || a === "markAbsent") {
       const ids = t.dataset.ids.split(",");
@@ -1285,4 +1346,4 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign };
+if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign };
