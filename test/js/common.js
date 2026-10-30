@@ -387,7 +387,8 @@ export function onViewChange(cb, active = () => true) {
   });
 }
 // PC表示の表：列の定義から作る。並べ替えは見出しをクリック
-export function pcTable(cols, rows, sort) {
+// rowClass：行ごとに付けるクラス（例：期限が迫っている教習生を赤く点滅）
+export function pcTable(cols, rows, sort, rowClass) {
   const sorted = [...rows];
   if (sort && sort.k) {
     const c = cols.find(x => x.k === sort.k), val = r => c.sort ? c.sort(r) : (c.v ? c.v(r) : r[c.k]);
@@ -399,7 +400,7 @@ export function pcTable(cols, rows, sort) {
     });
   }
   return `<div class="pctable"><table class="adm"><thead><tr>${cols.map(c => `<th>${c.k && c.nosort !== true ? `<button class="th" data-act="sort" data-k="${c.k}">${c.t}${sort && sort.k === c.k ? (sort.dir > 0 ? " ▲" : " ▼") : ""}</button>` : c.t}</th>`).join("")}</tr></thead>
-  <tbody>${sorted.map(r => `<tr>${cols.map(c => `<td>${c.html ? c.html(r) : esc(c.v ? c.v(r) : r[c.k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  <tbody>${sorted.map(r => `<tr${rowClass && rowClass(r) ? ` class="${rowClass(r)}"` : ""}>${cols.map(c => `<td>${c.html ? c.html(r) : esc(c.v ? c.v(r) : r[c.k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 export const nextSort = (sort, k) => sort.k === k ? { k, dir: -sort.dir } : { k, dir: 1 };
 

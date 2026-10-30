@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, limit, serverTimestamp, writeBatch
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, kentei2LimitNg, progressBarHtml, longDate, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, kentei2LimitNg, kentei2Soon, progressBarHtml, longDate, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -140,9 +140,11 @@ function renderStudentsPC() {
   return `<h2>${S.isAdmin ? "教習生（全員）" : "担当の教習生"}</h2>
     <div class="pctool"><button class="btn primary" data-act="new">＋ 教習生を追加</button><input id="flt" value="${esc(S.filter)}" placeholder="名前・番号・希望免許${S.isAdmin ? "・担当" : ""}で絞り込み" aria-label="絞り込み">
     <span class="sp"></span><span style="font-size:13px;color:var(--muted)">${list.length}人表示・${S.sel.size}人選択中</span><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button></div>
-    ${list.length ? pcTable(cols, list, S.sort) : '<div class="loading">教習生がいません</div>'}`;
+    ${list.length ? pcTable(cols, list, S.sort, s => alertCls(s)) : '<div class="loading">教習生がいません</div>'}`;
 }
 
+// 卒業検定の期限（みきわめ合格から3ヶ月）が迫っている教習生は、カード（PCは行）全体を赤く点滅させる（指導員の画面だけ。依頼者指定）
+const alertCls = s => !S.isAdmin && kentei2Soon(s) ? "k2blink" : "";
 function renderStudents() {
   const f = S.filter.trim();
   const list = sortList(S.students.filter(s => match(s, f)));
@@ -154,7 +156,7 @@ function renderStudents() {
   // スマホ：1人1枚のカード（横にずらさなくても編集ボタンが見えるように。依頼者指定）。進み具合は横棒グラフ
   list.forEach(s => {
     const st = s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : "";
-    h += `<div class="scard"><div class="sc-top"><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">
+    h += `<div class="scard ${alertCls(s)}"><div class="sc-top"><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">
       <div class="sc-name"><b>${esc(s.name)}</b> <small>${esc(s.nameKana || "")}</small><br><small>${esc(s.studentNo || "番号なし")}・第${s.stage}段階${s.license ? `・${esc(s.license)}` : ""}</small>${st ? ` ${st}` : ""}</div>
       <button class="btn" data-act="edit" data-s="${s.token}">編集</button></div>
       ${progressBar(s)}${mkText(s) ? `<div class="sc-mk">${esc(mkText(s))}</div>` : ""}${S.isAdmin ? `<div class="sc-mk">担当：${assignSelect(s)}</div>` : ""}</div>`;

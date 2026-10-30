@@ -434,3 +434,9 @@ body.pc .adm tr>td:last-child,body.pc .adm tr>th:last-child{position:sticky;righ
 .pglegend i.c2.b{background:repeating-linear-gradient(135deg,var(--green-soft) 0 3px,color-mix(in srgb,var(--green) 45%,transparent) 3px 5px)}
 .pglegend i.cur{background:none;border:2px solid var(--today)}
 .pglegend i.x{background:var(--orange);border-color:var(--orange)}
+/* 卒業検定の期限が迫っている教習生：カード（PCは表の行）全体を赤く点滅（依頼者指定）。動きを減らす設定の端末では点滅させず赤枠だけ */
+@keyframes k2blink{0%,100%{background:var(--lv3-soft);box-shadow:0 0 0 2px var(--lv3)}50%{background:var(--surface);box-shadow:0 0 0 2px transparent}}
+.scard.k2blink{border-color:var(--lv3);animation:k2blink 1.4s ease-in-out infinite}
+body.pc .adm tr.k2blink>td{animation:k2blink-row 1.4s ease-in-out infinite}
+@keyframes k2blink-row{0%,100%{background:var(--lv3-soft)}50%{background:var(--surface)}}
+@media (prefers-reduced-motion:reduce){.scard.k2blink,body.pc .adm tr.k2blink>td{animation:none;background:var(--lv3-soft)}}
