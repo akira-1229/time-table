@@ -6,7 +6,7 @@ import {
   CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
-  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, progressBarHtml, longDate
+  inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, progressBarHtml, longDate, expiriesOf, kentei2Soon, KENTEI2_MSG
 } from "./common.js";
 
 const app = document.getElementById("app");
@@ -96,12 +96,28 @@ function nextLesson() {
   };
 }
 const nextText = n => `${md(n.date)} ${n.ps.join("・")}限`;
+// 期限が近い時の警告（教習期限・仮免期限は expiryWarnDays 日以内、卒業検定はみきわめ合格から3ヶ月の期限が kentei2LimitWarnDays 日以内。依頼者指定）
+function deadlineWarns(st) {
+  if (!st || st.graduatedOn) return [];
+  const w = expiriesOf(st).map(e => ({ key: e.key, label: e.label, date: e.date, days: e.days }));
+  const k2 = kentei2Soon(st); if (k2) w.push({ key: "kentei2", label: "卒業検定の期限", date: k2.limit, days: k2.days, msg: KENTEI2_MSG });
+  return w.sort((a, b) => a.days - b.days);
+}
+const leftText = d => d < 0 ? `${-d}日過ぎています` : d === 0 ? "今日まで" : `あと${d}日`;
+function deadlineBanner(st) {
+  const w = deadlineWarns(st); if (!w.length) return "";
+  return `<div class="banner warn dlwarn"><b>期限が近づいています</b>${w.map(x => `<br>${x.label}：<b>${longDate(x.date)}</b>まで（${leftText(x.days)}）${x.msg ? `<br><span style="font-size:13px">${esc(x.msg)}</span>` : ""}`).join("")}
+    <br><span style="font-size:12px">期限を過ぎると教習（検定）を受けられなくなります。ご不明な点は学園にお問い合わせください。</span></div>`;
+}
 // アプリを開くたびに（ホーム画面から戻ってきた時も、10分以上たっていれば）お知らせ（あいさつと次の教習）を出す
 let nextShownAt = 0;
 function showNextLesson() {
   const n = nextLesson(), st = S.student;
   nextShownAt = Date.now(); lastSig = noticeSig();
-  const head = `${noticeHead()}<p class="greet"><b>${esc(st.name)}さん</b>　${greeting()}</p>`;
+  const head = `${noticeHead()}<p class="greet"><b>${esc(st.name)}さん</b>　${greeting()}</p>${deadlineBanner(st)}`;
+  // 期限の警告も「お知らせ」の履歴に残す
+  const dw = deadlineWarns(st);
+  if (dw.length) { saveNotices(NSCOPE(), dw.map(x => ({ key: `dl:${x.key}:${x.date}`, html: noticeRow("期限", `${x.label} ${mdS(x.date)}<small>${leftText(x.days)}</small>`, "warn") }))); if (S.tab === "ntc") render(); }
   if (!n) {
     sheet(`${head}<p>次の教習の予定は、まだ決まっていません。予約が決まると通知でお知らせします。</p>
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`, { notice: true });
@@ -139,6 +155,7 @@ function render() {
   let h = `<div class="topbar"><div><h1>${title}</h1><small>${esc(CFG.schoolName)}・${esc(st.name)} さん</small></div></div>`;
   const nx = nextLesson();
   if (nx) h += `<button class="nextbar" data-act="next"><span>${nx.date === dateStr(today()) ? "今日の教習" : "次の教習"}</span><b>${nextText(nx)}</b><small>${nx.time}</small></button>`;
+  h += deadlineBanner(st);
   if (kenteiOn(st)) h += `<div class="banner ok" style="font-size:16px;text-align:center"><b>本日はいよいよ検定日です！</b><br>これまでに教わった事をよく思い出して頑張りましょう！</div>`;
   h += `<section class="panel"><div class="body${S.tab === "set" ? " setpage" : ""}">`;
   h += S.tab === "cal" ? renderCal() : S.tab === "book" ? renderBook() : S.tab === "ntc" ? renderNtc() : renderSet();

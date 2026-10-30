@@ -440,3 +440,4 @@ body.pc .adm tr>td:last-child,body.pc .adm tr>th:last-child{position:sticky;righ
 body.pc .adm tr.k2blink>td{animation:k2blink-row 1.4s ease-in-out infinite}
 @keyframes k2blink-row{0%,100%{background:var(--lv3-soft)}50%{background:var(--surface)}}
 @media (prefers-reduced-motion:reduce){.scard.k2blink,body.pc .adm tr.k2blink>td{animation:none;background:var(--lv3-soft)}}
+.banner.dlwarn{background:var(--lv3-soft);border:1px solid var(--lv3);color:var(--ink)}.banner.dlwarn>b:first-child{color:var(--lv3)}
