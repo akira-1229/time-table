@@ -111,7 +111,9 @@ service cloud.firestore {
     // 指導員の予定（教習に出られない時間の✕）。ドキュメントID：指導員UID_YYYY-MM
     // 依頼先が空いているかを調べるため、指導員はほかの指導員の予定も読める。書けるのは本人だけ
     match /offs/{id} {
-      allow read: if isAdmin() || isInstructor();
+      // 教習生の画面にも担当指導員の✕（不在）を出すため、1件ずつの読み取り（get）は誰でもできる（中身は時間の一覧だけ。依頼者指定）
+      allow get: if true;
+      allow list: if isAdmin() || isInstructor();
       allow write: if isAdmin()
         || (isInstructor() && id.matches(request.auth.uid + '_[0-9]{4}-[0-9]{2}')
             && request.resource.data.uid == request.auth.uid

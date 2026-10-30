@@ -21,7 +21,7 @@ const MONTHS = [
   { y: now.getFullYear(), m: now.getMonth() + 1 },
   { y: new Date(now.getFullYear(), now.getMonth() + 1, 1).getFullYear(), m: new Date(now.getFullYear(), now.getMonth() + 1, 1).getMonth() + 1 }
 ];
-const S = { tab: "cal", mi: 1, student: null, avail: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
+const S = { tab: "cal", mi: 1, student: null, avail: {}, offs: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
 
 async function load() {
   if (!T) return fail("QRコードから開いてください。QRコードが手元にない場合は、事務所にお問い合わせください。");
@@ -32,6 +32,9 @@ async function load() {
     for (const { y, m } of MONTHS) {
       const md_ = await getDoc(doc(db, "students", T, "months", ymOf(y, m)));
       S.avail[ymOf(y, m)] = new Set(md_.exists() ? md_.data().slots || [] : []);
+      // 担当指導員の✕（教習に出られない時間）も見せる（依頼者指定。読めない時は出さないだけ）
+      try { const od = S.student.instructorUid ? await getDoc(doc(db, "offs", `${S.student.instructorUid}_${ymOf(y, m)}`)) : null; S.offs[ymOf(y, m)] = new Set(od && od.exists() ? od.data().slots || [] : []); }
+      catch (e) { S.offs[ymOf(y, m)] = new Set(); }
     }
     const bq = query(collection(db, "students", T, "bookings"), where("status", "in", ["confirmed", "cancelled"]));
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
@@ -213,6 +216,7 @@ function renderCal() {
   const start = S.mi === 0 ? now.getDate() : 1;
   const dl = []; for (let d = start; d <= daysIn(y, m); d++) dl.push(d);
   h += `<div class="calhint">縦が時限、横が日付です。横にスクロールすると月末まで見られます。</div>`;
+  if (S.offs[ym] && S.offs[ym].size) h += `<div class="calhint">灰色の「不在」は、担当指導員が教習に出られない時間です（指導員の予定は毎週水曜日に翌週分が決まります）。◯を付けることはできます。</div>`;
   // 月の切り替えは、表のすぐ上に出す（指導員画面の週の切り替えと同じ位置。依頼者指定）
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
@@ -233,14 +237,14 @@ function renderCal() {
       if (b) {
         h += `<td${tc(d, p === 10)}><button class="cell ${b.cancelRequested ? "req" : "booked"}" data-act="locked" data-id="${b.id}" aria-label="${label(ds, p)} 予約済み">予</button></td>`;
       } else {
-        const on = set.has(slotKey(d, p));
-        h += `<td${tc(d, p === 10)}><button class="cell ${on ? "on" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}">${on ? "◯" : ""}</button></td>`;
+        const on = set.has(slotKey(d, p)), off = !!(S.offs[ym] && S.offs[ym].has(slotKey(d, p)));
+        h += `<td${tc(d, p === 10)}><button class="cell ${on ? "on" : ""}${off ? " off" : ""}" data-act="toggle" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${label(ds, p)}${off ? " 担当指導員が不在" : ""}">${on ? "◯" : off ? "<small>不在</small>" : ""}</button></td>`;
       }
     });
     h += `</tr>`;
   }
   h += `</tbody></table></div>
-  <div class="legend"><span><i class="sw" style="background:var(--blue);border-color:var(--blue)"></i>空いている</span><span><i class="sw" style="background:var(--orange-soft);border-color:var(--orange)"></i>予約済み（変更不可）</span><span><i class="sw"></i>空いていない</span></div>
+  <div class="legend"><span><i class="sw" style="background:var(--blue);border-color:var(--blue)"></i>空いている</span><span><i class="sw" style="background:var(--orange-soft);border-color:var(--orange)"></i>予約済み（変更不可）</span><span><i class="sw"></i>空いていない</span>${S.offs[ym] && S.offs[ym].size ? `<span><i class="sw" style="background:var(--line)"></i>担当指導員が不在</span>` : ""}</div>
   <div class="tools">${S.mi === 1 ? `<button class="btn" data-act="copy">今月と同じにする</button>` : "<span></span>"}<button class="btn" data-act="bulk">曜日でまとめて選ぶ</button></div>`;
   return h;
 }

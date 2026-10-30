@@ -441,3 +441,6 @@ body.pc .adm tr.k2blink>td{animation:k2blink-row 1.4s ease-in-out infinite}
 @keyframes k2blink-row{0%,100%{background:var(--lv3-soft)}50%{background:var(--surface)}}
 @media (prefers-reduced-motion:reduce){.scard.k2blink,body.pc .adm tr.k2blink>td{animation:none;background:var(--lv3-soft)}}
 .banner.dlwarn{background:var(--lv3-soft);border:1px solid var(--lv3);color:var(--ink)}.banner.dlwarn>b:first-child{color:var(--lv3)}
+/* 教習生の表：担当指導員の✕（不在）の時間は灰色（◯は付けられる。依頼者指定） */
+.cell.off:not(.on){background:var(--line);border-color:var(--line);color:var(--muted)}.cell.off small{font-size:9px;font-weight:700}
+.cell.on.off{box-shadow:inset 0 0 0 2px var(--line)}
