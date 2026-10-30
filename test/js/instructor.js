@@ -708,6 +708,7 @@ async function assign(tok, ds, p, gk, quiet) {
 // この週の空いている枠に、ルールどおり自動で割り振る（未確定で入る。指導員が見て直してから確定する。依頼者と決めた考え方）
 //  ・この週の予約が少ない人から1人ずつ交代で（並んだら教習期限が近い人）。1人1週 autoAssign.weeklyMax 時限まで。日時の早い枠から
 //  ・その段階の最低時限まで入れたら、みきわめの結果が出るまで入れない。不合格なら、未実施の予約が2時限になるまで入れる（延びる人がいるため。依頼者指定）。教習の順番がずれている人は入れない
+//  ・同じ日に2〜3時限入れる時は飛び飛びにしない（その日のほかの予約から2時限より離れた時限には入れない。4・6・7はよい、1・9・10や3・6・9はだめ）
 //  ・高校生（教習生番号 3001〜3999）は優先：順番を lead 時限分だけ先にし、1週の上限も extraMax だけ多い（依頼者指定。不公平にならない程度）
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
@@ -767,9 +768,16 @@ async function autoAssign() {
     const types = specialTypes(s);
     return types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
   };
+  // 同じ日に2時限・3時限入れる時は、時間が飛び飛びにならないように：その日のほかの予約から maxGap（2）時限より離れた時限には入れない
+  // （4・6・7 のような一つ飛びまではよい。1・9・10、3・6・9 は入れない。依頼者指定）
+  const gapNg = (s, d, ps) => {
+    const have = S.bookings.filter(b => b.token === s.token && b.date === d).map(b => b.period);
+    return have.length > 0 && Math.min(...ps.flatMap(q => have.map(e => Math.abs(q - e)))) > (AA.maxGap ?? 2);
+  };
   // 担当（自分）の枠に1つ入れる。"ok"＝入れた、"skip"＝学科の確認が要るので入れない、""＝入る枠がない
   const ownOne = async (s, tries) => {
     for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) for (const ty of tries) {
+      if (gapNg(s, d, ty ? span(q, ty) : [q])) continue;
       const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
       if (ev.ok === false || ev.dark) continue;
       const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
@@ -786,6 +794,7 @@ async function autoAssign() {
     if (!helpers) { try { helpers = await helpersOf(); } catch (e) { helpers = []; noteIndex(e); hErr = friendlyError(e); } }
     const cap = AA.delegateMax || 6;
     for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
+      if (gapNg(s, d, [q])) continue;
       const ev = evaluate(s, d, q, true);
       if (ev.ok === false || ev.dark) continue;
       const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
