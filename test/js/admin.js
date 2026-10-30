@@ -143,8 +143,9 @@ function renderStudentsPC() {
     ${list.length ? pcTable(cols, list, S.sort, s => alertCls(s)) : '<div class="loading">教習生がいません</div>'}`;
 }
 
-// 卒業検定の期限（みきわめ合格から3ヶ月）が迫っている教習生は、カード（PCは行）全体を赤く点滅させる（指導員の画面だけ。依頼者指定）
-const alertCls = s => !S.isAdmin && kentei2Soon(s) ? "k2blink" : "";
+// 卒業検定の期限（みきわめ合格から3ヶ月）や教習期限（expiryWarnDays 日以内・過ぎた人も）が迫っている教習生は、
+// カード（PCは行）全体を赤く点滅させる（指導員の画面だけ。卒業した人は除く。依頼者指定）
+const alertCls = s => !S.isAdmin && !s.graduatedOn && (kentei2Soon(s) || expiriesOf(s).some(e => e.key === "deadline")) ? "k2blink" : "";
 function renderStudents() {
   const f = S.filter.trim();
   const list = sortList(S.students.filter(s => match(s, f)));
