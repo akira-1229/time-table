@@ -216,7 +216,7 @@ function renderCal() {
   const start = S.mi === 0 ? now.getDate() : 1;
   const dl = []; for (let d = start; d <= daysIn(y, m); d++) dl.push(d);
   h += `<div class="calhint">縦が時限、横が日付です。横にスクロールすると月末まで見られます。</div>`;
-  if (S.offs[ym] && S.offs[ym].size) h += `<div class="calhint">灰色の「不在」は、担当指導員が教習に出られない時間です（指導員の予定は毎週水曜日に翌週分が決まります）。◯を付けることはできます。</div>`;
+  if (S.offs[ym] && S.offs[ym].size) h += `<div class="calhint">灰色の「不在」は、担当指導員が教習に出られない時間です（指導員の予定は毎週水曜日までに翌週分が決まります）。◯を付けることはできます。</div>`;
   // 月の切り替えは、表のすぐ上に出す（指導員画面の週の切り替えと同じ位置。依頼者指定）
   h += `<div class="months">${MONTHS.map((x, i) => `<button class="chip" aria-pressed="${S.mi === i}" data-act="month" data-v="${i}">${x.m}月</button>`).join("")}</div>`;
   h += `<div class="gridwrap calwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
