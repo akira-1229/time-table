@@ -4,6 +4,7 @@
  * ・processOutbox：1分おきに起動（＋画面からウェブアプリとして呼ばれた時はすぐ）。Firestoreの outbox（送信待ち）を取り出して、プッシュ通知を送る
  *                  定期実行の時は、あわせて lessonCheck_ で「教習が終わったら実施・欠席を入力してください」を指導員に通知する
  *                  （終わった瞬間に1回。入力されるまで CHECK_REPEAT_MIN 分おきに出し直す）
+ *                  水曜日の PUBLISH_REMIND 時に、来週の予定をまだ確定（公開）していない指導員にだけ通知する（publishReminder_）
  * ・dailyReminder：毎朝起動。締切（教習生ごと）の数日前と前日に、その月の分が未入力の教習生だけに通知する
  *                  あわせて、教習期限・仮免期限の2ヶ月前・1ヶ月前・2週間前に、教習生本人と担当指導員に通知する
  *                  検定日の当日は、その教習生に「本日はいよいよ検定日です！」を通知する
@@ -20,6 +21,7 @@
  *   ACCESS_KEEP_DAYS … アクセス記録を残す日数（省略時 90）
  *   CHECK_REPEAT_MIN … 実施・欠席が未入力の時に、指導員へ通知を出し直す間隔（分。省略時 30）
  *   CHECK_HOURS      … 出し直しをする時間帯（例：9-21。省略時 9-21。夜中は送らない）
+ *   PUBLISH_REMIND   … 水曜日の何時に「来週の予定がまだ公開されていません」を送るか（カンマ区切り。省略時 9,17）
  *
  * ※ 秘密鍵はGitHubなど外部に絶対に置かないこと
  */
@@ -159,6 +161,7 @@ function processOutbox(wait) {
     });
     // 定期実行（1分おき）の時だけ：教習が終わったら指導員に実施・欠席の入力を促す（画面から呼ばれた時はしない）
     if (typeof wait !== 'number') { try { lessonCheck_(); } catch (e) { Logger.log('実施・欠席のお知らせでエラー: ' + e); } }
+    if (typeof wait !== 'number') { try { publishReminder_(); } catch (e) { Logger.log('公開のお知らせでエラー: ' + e); } }
   } finally { lock.releaseLock(); }
 }
 
@@ -210,6 +213,39 @@ function lessonCheck_() {
       lines.join('、') + (list.length > 4 ? ` ほか${list.length - 4}件` : '') + '。入力するまでお知らせします。', `${appUrl}instructor.html`) ? 1 : 0;
   });
   if (n) Logger.log(`実施・欠席のお知らせ：指導員${n}人に送信`);
+}
+
+/* ---------- 水曜日：来週の予定がまだ公開されていない指導員に知らせる（依頼者指定） ---------- */
+// 来週の予定は 月〜水曜日のうちに確定（公開）する決まり。確定すると weeks/{uid}_{来週の月曜} ができるので、無い人にだけ送る
+// （朝に送った後で確定した人には、夕方は送らない）
+function publishReminder_() {
+  const now = new Date(), tz = 'Asia/Tokyo';
+  if (Utilities.formatDate(now, tz, 'u') !== '3') return;   // 水曜日だけ（u：月=1〜日=7）
+  const hour = Number(Utilities.formatDate(now, tz, 'H'));
+  const hours = (prop('PUBLISH_REMIND') || '9,17').split(',').map(Number);
+  if (hours.indexOf(hour) < 0) return;
+  const key = Utilities.formatDate(now, tz, 'yyyy-MM-dd') + '-' + hour;
+  if (prop('PUBLISH_LAST') === key) return;                  // その時刻の分は1回だけ
+  PROPS.setProperty('PUBLISH_LAST', key);
+  const day = n => new Date(now.getTime() + n * 86400000);
+  const mon = Utilities.formatDate(day(5), tz, 'yyyy-MM-dd');  // 来週の月曜（週の確定記録のID）
+  const range = `${Utilities.formatDate(day(5), tz, 'M月d日')}〜${Utilities.formatDate(day(11), tz, 'M月d日')}`;
+  const last = hour === Math.max.apply(null, hours);
+  // 担当の教習生がいる指導員だけ
+  const has = {};
+  query_({ from: [{ collectionId: 'students' }],
+    where: { fieldFilter: { field: { fieldPath: 'active' }, op: 'EQUAL', value: { booleanValue: true } } } })
+    .forEach(st => { if (st.data.instructorUid) has[st.data.instructorUid] = true; });
+  const appUrl = prop('APP_URL'); let n = 0;
+  query_({ from: [{ collectionId: 'instructors' }] }).forEach(ins => {
+    const uid = relPath_(ins.name).split('/')[1];
+    if (!has[uid] || getDoc_(`weeks/${uid}_${mon}`)) return;
+    n += deliver_(`instructors/${uid}`, ins.data.fcmTokens, '来週の予定がまだ公開されていません',
+      last ? `本日が締切です。来週（${range}）の予定を、確認してから「確定して通知」で公開してください。`
+           : `来週（${range}）の予定は、今日（水曜日）までに自動で割り振り、確認してから「確定して通知」で公開してください。`,
+      `${appUrl}instructor.html`) ? 1 : 0;
+  });
+  Logger.log(`公開のお知らせ（${hour}時）：指導員${n}人に送信`);
 }
 
 /* ---------- 毎朝：締切前のお知らせ・期限が近い教習生のお知らせ ---------- */
