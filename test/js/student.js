@@ -80,7 +80,7 @@ function unacked() {
 }
 
 // 次の教習（確定済みで、まだ終わっていない一番早い予約の日）。同じ日の予約はまとめて出す（2・3時限連続の教習は1つにまとめる）
-const kindOf = it => it.lessonType === "multi" ? (CFG.multi || {}).label || "複数教習" : it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.lessonType === "hw3" || it.highway ? "高速教習" : "";
+const kindOf = it => it.lessonType === "kiken" ? (CFG.kiken || {}).label || "危険予測" : it.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : it.lessonType === "hw3" || it.highway ? "高速教習" : "";
 function nextLesson() {
   const st = S.student, t = new Date();
   const list = S.bookings.filter(b => b.status === "confirmed" && !b.result && bookingEnd(b) > t);
@@ -273,7 +273,7 @@ function renderBook() {
   else {
     h += `<h3 style="margin-top:0">これからの予約</h3><div class="list">`;
     up.forEach(b => {
-      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${noOf(b) ? `${noOf(b)}・` : ""}${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "multi" ? `・${esc((CFG.multi || {}).label || "複数教習")}` : b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.lessonType === "hwSolo" ? `・${esc((CFG.hwSolo || {}).label || "単独高速")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
+      h += `<div class="item"><div><div class="t">${label(b.date, b.period)}</div><div class="s">${noOf(b) ? `${noOf(b)}・` : ""}${P[b.period][0]}〜${P[b.period][1]}${b.lessonType === "kiken" ? `・${esc((CFG.kiken || {}).label || "危険予測")}` : b.lessonType === "hwSolo" ? `・${esc((CFG.hwSolo || {}).label || "単独高速")}` : b.highway ? "・高速教習" : ""}</div></div>${b.cancelRequested ? '<span class="tag wait">キャンセル希望中</span>' : ""}</div>`;
     });
     h += `</div>`;
   }
@@ -423,7 +423,7 @@ document.addEventListener("click", async e => {
   }
   else if (a === "locked") {
     const b = S.bookings.find(x => x.id === t.dataset.id);
-    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.pairId && b.lessonType !== "multi" ? `<br>${esc(b.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : b.lessonType === "hw3" ? (CFG.hw3 || {}).label || "高速教習" : (CFG.kiken || {}).label || "危険予測")}（${b.lessonType === "hw3" ? 3 : 2}時限連続のため、キャンセルは${b.lessonType === "hw3" ? 3 : 2}時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
+    sheet(`<h3>この枠は予約済みです</h3><p>${label(b.date, b.period)}（${P[b.period][0]}〜）${b.pairId ? `<br>${esc(b.lessonType === "hwSolo" ? (CFG.hwSolo || {}).label || "単独高速" : b.lessonType === "hw3" ? (CFG.hw3 || {}).label || "高速教習" : (CFG.kiken || {}).label || "危険予測")}（${b.lessonType === "hw3" ? 3 : 2}時限連続のため、キャンセルは${b.lessonType === "hw3" ? 3 : 2}時限まとめてになります）` : ""}<br><span style="color:var(--muted);font-size:13px">予約済みの枠は、この画面からは外せません。</span></p>
       ${b.cancelRequested ? '<div class="banner warn">キャンセル希望を送信済みです。指導員の確認を待っています。</div><button class="btn full" data-act="close">閉じる</button>'
         : `<div class="list"><button class="btn accent full" data-act="reqCancel" data-id="${b.id}">キャンセル希望を送る</button><a class="btn full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`}`);
   }

@@ -35,7 +35,6 @@ export const slotKey = (day, p) => `${day}-${p}`;                    // 月ご�
 export const lessonMin = (stage, st) => (stage === 1 && st && +st.minLessons1) || ((CFG.lessons || {})[stage] || {}).min || 0;
 export const kikenNoOf = stage => ((CFG.lessons || {})[stage] || {}).kikenNo || 0;
 export const hwNoOf = stage => ((CFG.lessons || {})[stage] || {}).hwNo || 0;
-export const multiNoOf = stage => ((CFG.lessons || {})[stage] || {}).multiNo || 0;
 // 高速教習は「単独高速（2時限）」か「高速教習（3時限）」。古いデータの highway:true だけの予約も高速として扱う
 export const isHwType = t => t === "hwSolo" || t === "hw3";
 const UNITS = { hwSolo: 2, hw3: 3 };   // 時限数として数える数（危険予測は2時限で1つ）
@@ -60,15 +59,7 @@ export function lessonPlan(st, pending) {
   items.forEach(it => { it.no = n + 1; n += it.units; });
   const K = kikenNoOf(st.stage);
   let ok = true, reason = "";
-  // 複数教習はちょうど multiNo 時限目（第2段階11時限目）。まだその時限目まで受けていない人だけ見る
-  const M = multiNoOf(st.stage), ML = (CFG.multi || {}).label || "複数教習";
-  if (M && doneOf(st) < M) {
-    const mm = items.filter(it => it.lessonType === "multi");
-    const at = items.find(it => it.no <= M && M < it.no + it.units);
-    if (mm.some(it => it.no !== M)) { ok = false; reason = `${ML}が${mm.find(it => it.no !== M).no}時限目になっています（${M}時限目のみ）`; }
-    else if (at && at.lessonType !== "multi") { ok = false; reason = `${M}時限目は${ML}です（今は${at.lessonType ? "別の教習" : "通常の教習"}が入っています）`; }
-  }
-  if (ok && K && !st.kikenDone) {
+  if (K && !st.kikenDone) {
     const kk = items.filter(it => it.lessonType === "kiken");
     const at = items.find(it => it.no <= K && K < it.no + it.units);
     if (kk.some(it => it.no !== K)) { ok = false; reason = `${(CFG.kiken || {}).label || "危険予測"}が${kk.find(it => it.no !== K).no}時限目になっています（${K}時限目のみ）`; }
@@ -87,10 +78,9 @@ export function lessonPlan(st, pending) {
   }
   return { items, total: n, ok, reason };
 }
-// 次に入れる教習（今の予約のいちばん後ろ）が、複数教習・危険予測・高速教習の番か。"multi"／"kiken"／"hw"／""
+// 次に入れる教習（今の予約のいちばん後ろ）が、危険予測や高速教習の番か。"kiken"／"hw"／""
 export function nextSpecial(st, pending) {
   const next = lessonPlan(st, pending).total + 1;
-  if (multiNoOf(st.stage) === next && doneOf(st) < next) return "multi";
   if (kikenNoOf(st.stage) === next && !st.kikenDone) return "kiken";
   if (hwNoOf(st.stage) === next && !st.hwDone) return "hw";
   return "";

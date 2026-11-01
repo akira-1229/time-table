@@ -306,8 +306,6 @@ body.pc #setWrap,body.pc #ntcWrap{max-width:760px;padding:20px 28px 40px}
 .nextl .s{font-size:13px;color:var(--muted)}
 .seg.seg4{grid-template-columns:repeat(4,1fr)}
 .seg.seg4 button{padding:6px 2px;font-size:13px}
-.seg.seg5{grid-template-columns:repeat(5,1fr)}
-.seg.seg5 button{padding:6px 1px;font-size:12px}
 /* 教習生：次の教習の「確認しました」 */
 .ackchk{display:flex;align-items:center;gap:10px;margin:4px 0 12px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:16px;font-weight:700;cursor:pointer}
 .ackchk input{width:24px;height:24px;margin:0;accent-color:var(--blue)}

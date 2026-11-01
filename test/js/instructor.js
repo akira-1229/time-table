@@ -248,9 +248,20 @@ const bookAt = (ds, p) => S.bookings.find(b => b.date === ds && b.period === p &
 // ほかの指導員から頼まれた教習（その時限は自分の予約が入っているのと同じ扱い）
 const subAt = (ds, p) => (S.subs || []).find(b => b.date === ds && b.period === p);
 const bookingsAt = (ds, p) => S.bookings.filter(b => b.date === ds && b.period === p);
-// 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は2人まで、複数教習（第2段階11時限目）は3人まで（config の capacity。依頼者指定）
-const SHARED = ["hw3", "kiken", "multi"];
-const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 2 : type === "multi" ? (CFG.multi || {}).capacity || 3 : 1;
+// 複数教習：第2段階11時限目（config の lessons[2].multiNo）は通常の教習だが、同じ時限に3人まで一緒に入れてもよい（multi.capacity。依頼者指定）
+const MULTI = () => ({ label: "複数教習", capacity: 3, ...(CFG.multi || {}) });
+const isMultiNo = (s, no) => { const M = lessonsOf(s.stage, "multiNo"); return !!M && no === M; };
+// ds の p限に入れた時、その教習生の何時限目になるか
+const lessonNoAt = (s, ds, p) => { const it = planOf(s, [{ id: "__new", token: s.token, date: ds, period: p, stage: s.stage }]).items.find(x => x.bookings.some(b => b.id === "__new")); return it ? it.no : 0; };
+// その時限の予約が、全員その人の11時限目の通常の教習なら、その教習生の一覧（一緒に入れられる）。そうでなければ null
+function multiGroup(ds, p) {
+  const list = S.bookings.filter(b => b.date === ds && b.period === p && !b.subUid);
+  if (!list.length) return [];
+  return list.every(b => { const s = ST(b.token), it = !b.lessonType && s && itemOf(b); return it && isMultiNo(s, it.no); }) ? list.map(b => b.token) : null;
+}
+// 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は2人まで（config の capacity。依頼者指定）
+const SHARED = ["hw3", "kiken"];
+const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 2 : 1;
 // a限から始まる、一緒に受けられる教習（高速教習3時限・危険予測2時限）の組に入っている教習生
 // （その時限がその種類の同じ組の予約だけの時）。ほかの予約が混じっていれば null
 function groupAt(ds, a, type) {
@@ -265,9 +276,7 @@ function groupAt(ds, a, type) {
 const cancelReqGroups = () => S.cancelReqs.filter((b, i, a) => !b.pairId || a.findIndex(x => x.pairId === b.pairId && x.token === b.token) === i);
 // 実施にしようとしている教習が、危険予測（12時限目）・高速教習（13時限目から）の順番に合っているか。合っていなければ理由を返す
 function orderNg(s, it) {
-  const K = lessonsOf(s.stage, "kikenNo"), H = lessonsOf(s.stage, "hwNo"), M = lessonsOf(s.stage, "multiNo"), on = n => n && it.no <= n && n < it.no + it.units;
-  if (it.lessonType === "multi" && it.no !== M) return `${PT("multi").label}は${M}時限目の教習ですが、今は${it.no}時限目になっています（欠席などで順番がずれています）`;
-  if (!it.lessonType && on(M) && doneOf(s) < M) return `${M}時限目は${PT("multi").label}ですが、通常の教習になっています`;
+  const K = lessonsOf(s.stage, "kikenNo"), H = lessonsOf(s.stage, "hwNo"), on = n => n && it.no <= n && n < it.no + it.units;
   if (it.lessonType === "kiken" && !s.kikenDone && it.no !== K) return `${KK().label}は${K}時限目の教習ですが、今は${it.no}時限目になっています（欠席などで順番がずれています）`;
   if (isHwType(it.lessonType) && !s.hwDone && it.no !== H) return `高速教習は${H}時限目からの教習ですが、今は${it.no}時限目になっています（欠席などで順番がずれています）`;
   if (!it.lessonType && !s.kikenDone && on(K)) return `${K}時限目は${KK().label}ですが、通常の教習になっています`;
@@ -311,7 +320,15 @@ function evaluate(s, ds, p, viaSub) {
   if (!viaSub && isOff(ds, p)) return { ok: false, reason: "指導員の予定（✕）が入っている枠です" };
   if (!viaSub && subAt(ds, p)) return { ok: false, reason: "ほかの指導員から頼まれた教習が入っている時間です" };
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
-  if (!viaSub && bookAt(ds, p)) return { ok: false, reason: "この枠はすでに予約が入っています" };
+  let join = 0;
+  if (!viaSub && bookAt(ds, p)) {
+    // 11時限目どうしなら、3人まで一緒に入れる（複数教習）
+    const g = multiGroup(ds, p);
+    if (!g || !isMultiNo(s, lessonNoAt(s, ds, p))) return { ok: false, reason: "この枠はすでに予約が入っています" };
+    if (g.includes(s.token)) return { ok: false, reason: "この時限にはすでに入っています" };
+    if (g.length >= MULTI().capacity) return { ok: false, reason: `この時限の${MULTI().label}は満員です（${MULTI().capacity}人まで）` };
+    join = g.length;
+  }
   if (viaSub && S.bookings.some(b => b.token === s.token && b.date === ds && b.period === p)) return { ok: false, reason: "この時限はすでに予約が入っています" };
   if (dayCount(s.token, ds) >= dayMax(s)) return { ok: false, reason: `この日は上限の${dayMax(s)}時限まで入っています` };
   if ((CFG.noTripleStages || []).includes(s.stage)) {
@@ -324,7 +341,7 @@ function evaluate(s, ds, p, viaSub) {
   }
   const sq = seqCheck(s, [{ token: s.token, date: ds, period: p }]);
   if (sq) return { ok: false, reason: sq };
-  return { ok: true };
+  return join ? { ok: true, join } : { ok: true };
 }
 const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 
@@ -332,16 +349,15 @@ const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 // type："kiken"＝危険予測（2時限で1時限と数える）、"hwSolo"＝単独高速（高速教習2時限）、"hw3"＝高速教習（3時限）
 const KK = () => CFG.kiken || { label: "危険予測", noPairAfter: [] };
 const hasSpecial = s => (CFG.specialStages || [2]).includes(s.stage);                 // 高速教習・危険予測・単独高速がある段階か
-const PT = type => type === "hwSolo" ? (CFG.hwSolo || { label: "単独高速", noPairAfter: [3] }) : type === "hw3" ? (CFG.hw3 || { label: "高速教習" }) : type === "multi" ? (CFG.multi || { label: "複数教習" }) : KK();
-const SHORT = { kiken: "危険", hwSolo: "単独", hw3: "高速", multi: "複数" };   // マス目の小さい表示用
-const LEN = type => type === "hw3" ? 3 : type === "multi" ? 1 : 2;
-const candCls = type => isHwType(type) ? "hw" : "kk";   // 「教習生から選ぶ」で光らせる色（高速はオレンジ、危険予測・複数教習は緑）
+const PT = type => type === "hwSolo" ? (CFG.hwSolo || { label: "単独高速", noPairAfter: [3] }) : type === "hw3" ? (CFG.hw3 || { label: "高速教習" }) : KK();
+const SHORT = { kiken: "危険", hwSolo: "単独", hw3: "高速" };   // マス目の小さい表示用
+const LEN = type => type === "hw3" ? 3 : 2;
 const span = (a, type) => Array.from({ length: LEN(type) }, (_, i) => a + i);
 const spanText = (a, type) => span(a, type).join("・");
 // 種類を選ぶボタンの文字
-const TYPE_BTN = { kiken: () => `${KK().label}（2時限）`, hwSolo: () => "高速 2時限", hw3: () => "高速 3時限", multi: () => PT("multi").label };
+const TYPE_BTN = { kiken: () => `${KK().label}（2時限）`, hwSolo: () => "高速 2時限", hw3: () => "高速 3時限" };
 // a限から続けて入れられる組か（休憩をまたぐ組や、決まった組み合わせ以外は不可）
-const pairOk = (a, type = "kiken") => type === "multi" ? a >= 1 && a <= 10 : type === "hw3"
+const pairOk = (a, type = "kiken") => type === "hw3"
   ? (CFG.highwaySets || []).some(set => sameSet(set, span(a, type)))
   : a >= 1 && a + 1 <= 10 && !PT(type).noPairAfter.includes(a);
 const pairsWith = (p, type = "kiken") => [p - 2, p - 1, p].filter(a => a >= 1 && a <= p && p < a + LEN(type) && pairOk(a, type));   // p限を含む組の開始時限
@@ -349,7 +365,7 @@ const pairsWith = (p, type = "kiken") => [p - 2, p - 1, p].filter(a => a >= 1 &&
 const specialTypes = s => {
   if (!hasSpecial(s)) return [];
   const n = nextSpecial(s, pendingOf(s));
-  return n === "kiken" ? ["kiken"] : n === "multi" ? ["multi"] : n === "hw" ? ["hwSolo", "hw3"] : [];
+  return n === "kiken" ? ["kiken"] : n === "hw" ? ["hwSolo", "hw3"] : [];
 };
 // 危険予測→単独高速の決まった組（例：危険予測4・5限→単独高速6・7限）になっているか
 function isCombo(list) {
@@ -379,16 +395,14 @@ function evaluatePair(s, ds, a, type = "kiken") {
   }
   if (type === "kiken" && (s.kikenDone || pendingOf(s).some(b => b.lessonType === "kiken")))
     return { ok: false, reason: s.kikenDone ? `${L}は受講済みです` : `${L}はすでに予約が入っています` };
-  if (type === "multi" && pendingOf(s).some(b => b.lessonType === "multi"))
-    return { ok: false, reason: `${L}はすでに予約が入っています` };
-  if (isHwType(type) && (s.hwDone || pendingOf(s).some(b => isHwType(b.lessonType))))
+  if (type !== "kiken" && (s.hwDone || pendingOf(s).some(b => isHwType(b.lessonType))))
     return { ok: false, reason: s.hwDone ? "高速教習は受講済みです" : "高速教習はすでに予約が入っています" };
   const mine = S.bookings.filter(b => b.token === s.token && b.date === ds);
   const list = [...mine.map(b => ({ period: b.period, type: b.lessonType || "", g: b.pairId || b.id })), ...ps.map(q => ({ period: q, type, g: "new" }))];
   const combo = isCombo(list);
   if (!combo) {
     // 危険予測と高速教習は、決まった組（危険予測4・5限→単独高速6・7限）のほかは同じ日に入れない
-    const other = type === "multi" ? null : mine.find(b => type === "kiken" ? isHwType(b.lessonType) || b.highway : b.lessonType === "kiken");
+    const other = mine.find(b => type === "kiken" ? isHwType(b.lessonType) || b.highway : b.lessonType === "kiken");
     if (other) return { ok: false, reason: `同じ日に${type === "kiken" ? "高速教習" : KK().label}が入っています（同じ日に入れられるのは ${KK().label}4・5限→${PT("hwSolo").label}6・7限 の組だけです）` };
     if (list.length > dayMax(s)) return { ok: false, reason: `1日の上限（${dayMax(s)}時限）を超えます` };
     if ((CFG.noTripleStages || []).includes(s.stage)) {
@@ -482,6 +496,9 @@ function render() {
   if (slow.length) h += `<div class="banner warn"><b>このペースでは期限に間に合わない教習生がいます</b>${slow.map(([s, pc]) => `<br>${esc(nm(s))}：${esc(paceText(pc))}`).join("")}<br><span style="font-size:12px">これまでの1日あたりの時限数から見込みを出しています。空き時間を増やしてもらうなど、早めに相談してください。</span></div>`;
   const ngs = S.students.map(s => [s, planOf(s)]).filter(([, pl]) => !pl.ok);
   if (ngs.length) h += `<div class="banner warn"><b>教習の順番がずれています</b>${ngs.map(([s, pl]) => `<br>${esc(nm(s))}：${esc(pl.reason)}`).join("")}<br><span style="font-size:12px">欠席などで順番がずれた時に出ます。予約を入れ直してください。</span></div>`;
+  // 同じ時限に2人以上入っているのに、11時限目でない人がいる（欠席などで時限目がずれた時）
+  const badM = [...new Set(S.bookings.filter(b => !b.lessonType && !b.subUid && !b.result && bookingsAt(b.date, b.period).filter(x => !x.subUid).length > 1).map(b => `${b.date}|${b.period}`))].filter(k => { const [d, q] = k.split("|"); return multiGroup(d, +q) === null; });
+  if (badM.length) h += `<div class="banner warn"><b>同じ時限に2人以上入っていますが、${lessonsOf(2, "multiNo")}時限目でない教習生がいます</b>${badM.map(k => { const [d, q] = k.split("|"); return `<br>${label(d, +q)}：${bookingsAt(d, +q).filter(x => !x.subUid).map(x => esc(nm(ST(x.token)))).join("・")}`; }).join("")}<br><span style="font-size:12px">一緒に入れるのは${lessonsOf(2, "multiNo")}時限目どうし（${MULTI().label}）だけです。欠席などで時限目がずれた時に出ます。入れ直してください。</span></div>`;
   const gones = S.bookings.filter(goneDraft);
   if (gones.length) h += `<div class="banner warn"><b>教習生が◯を外した未確定の予約が${gones.length}件あります</b>（赤い枠）。取り消すか、教習生に確認してください。</div>`;
   if (S.cancelReqs.length) {
@@ -489,7 +506,7 @@ function render() {
     h += `<div class="banner warn"><b>キャンセル希望が${reqs.length}件あります</b>`;
     reqs.forEach(b => {
       const s = ST(b.token), ps = S.cancelReqs.filter(x => b.pairId ? x.pairId === b.pairId && x.token === b.token : x.id === b.id).map(x => x.period).sort((m, n) => m - n);
-      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${b.pairId ? `${md(b.date)} ${ps.join("・")}限${ps.length < LEN(b.lessonType) ? "を含む" : ""}${typeName(b)}${LEN(b.lessonType) > 1 ? `（${LEN(b.lessonType)}時限まとめて）` : ""}` : label(b.date, b.period)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="reject" data-id="${b.id}">却下</button><button class="btn accent" data-act="approve" data-id="${b.id}">承認</button></span></div>`;
+      h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span>${esc(nm(s))}<br>${b.pairId ? `${md(b.date)} ${ps.join("・")}限${ps.length < LEN(b.lessonType) ? "を含む" : ""}${typeName(b)}（${LEN(b.lessonType)}時限まとめて）` : label(b.date, b.period)}</span><span style="display:flex;gap:6px"><button class="btn" data-act="reject" data-id="${b.id}">却下</button><button class="btn accent" data-act="approve" data-id="${b.id}">承認</button></span></div>`;
     });
     h += `</div>`;
   }
@@ -510,9 +527,9 @@ function render() {
   S.ptype = pkTypes.includes(S.ptype) ? S.ptype : pkTypes[0] || null;
   if (S.mode === "student") {
     h += pk ? `<div class="picking"><span><b>${esc(nm(pk))}</b>を割り当て中<br><span style="font-size:12px;color:var(--muted)">光っている枠をタップすると予約されます（第${pk.stage}段階・1日${dayMax(pk)}時限まで${(CFG.noTripleStages || []).includes(pk.stage) ? "・連続3時限は高速教習（3時限）のみ" : ""}）</span></span><button class="btn" data-act="unpick">やめる</button></div>
-      ${pkTypes.length ? `<div class="banner ${candCls(S.ptype) === "kk" ? "ok" : "warn"}" style="margin-bottom:6px">次は<b>${lessonPlan(pk, pendingOf(pk)).total + 1}時限目</b>で、<b>${pkTypes.length > 1 ? "高速教習" : PT(pkTypes[0]).label}</b>の番です。${pkTypes.length > 1 ? "2時限（単独高速）か3時限かを選んでください。" : pkTypes[0] === "multi" ? `1時限です。同じ時限に${CAP("multi")}人まで一緒に入れます。` : "2時限連続で入ります。"}</div>
+      ${pkTypes.length ? `<div class="banner ${S.ptype === "kiken" ? "ok" : "warn"}" style="margin-bottom:6px">次は<b>${lessonPlan(pk, pendingOf(pk)).total + 1}時限目</b>で、<b>${pkTypes[0] === "kiken" ? KK().label : "高速教習"}</b>の番です。${pkTypes.length > 1 ? "2時限（単独高速）か3時限かを選んでください。" : "2時限連続で入ります。"}</div>
         ${pkTypes.length > 1 ? `<div class="seg" role="group" aria-label="教習の種類">${pkTypes.map(v => `<button aria-pressed="${S.ptype === v}" data-act="ptype" data-v="${v}">${TYPE_BTN[v]()}</button>`).join("")}</div>` : ""}
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${LEN(S.ptype) > 1 ? `光っているマスは開始の時限です。タップすると、その時限から${LEN(S.ptype)}時限がまとめて入ります。` : "光っているマスをタップすると入ります。「一緒に」と出ているマスは、ほかの教習生と一緒に入ります。"}</div>` : ""}`
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">光っているマスは開始の時限です。タップすると、その時限から${LEN(S.ptype)}時限がまとめて入ります。</div>` : ""}`
       : `<div class="banner info">下の一覧から教習生を選ぶと、その人が空いている枠だけが光ります。</div>`;
   } else {
     h += `<div class="heatleg"><span><i style="background:var(--lv1-soft);border-color:var(--lv1)"></i>少ない（${T1}人以下）</span><span><i style="background:var(--lv2-soft);border-color:var(--lv2)"></i>中間（${T1 + 1}〜${T2}人）</span><span><i style="background:var(--lv3-soft);border-color:var(--lv3)"></i>多い（${T2 + 1}人以上）</span></div>
@@ -540,8 +557,12 @@ function render() {
       }
       // 高速教習（3時限）に一緒に入れる人を選んでいる時は、その組の始まりの枠を光らせる
       const joinEv = b && pk && SHARED.includes(S.ptype) && b.lessonType === S.ptype ? evaluatePair(pk, d, p, S.ptype) : null;
-      if (joinEv && joinEv.ok) {
-        h += `${td}<button class="wc cand ${candCls(S.ptype)}" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}" aria-label="${lb}から${PT(S.ptype).label}に一緒に入れる">${spanText(p, S.ptype)}<small>一緒に${joinEv.join + 1}/${CAP(S.ptype)}人</small></button></td>`;
+      // 11時限目の人を選んでいる時は、11時限目どうしで入っている枠（複数教習）も光らせる
+      const mJoin = pk && !(S.ptype && hasSpecial(pk)) && b && !bs.some(x => x.lessonType || x.subUid) ? evaluate(pk, d, p) : null;
+      if (mJoin && mJoin.ok && mJoin.join) {
+        h += `${td}<button class="wc cand kk" data-act="assign" data-s="${pk.token}" data-d="${d}" data-p="${p}" aria-label="${lb} ${MULTI().label}で一緒に入れる">◯<small>一緒に${mJoin.join + 1}/${MULTI().capacity}人</small></button></td>`;
+      } else if (joinEv && joinEv.ok) {
+        h += `${td}<button class="wc cand ${S.ptype === "kiken" ? "kk" : "hw"}" data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}" aria-label="${lb}から${PT(S.ptype).label}に一緒に入れる">${spanText(p, S.ptype)}<small>一緒に${joinEv.join + 1}/${CAP(S.ptype)}人</small></button></td>`;
       } else if (bs.length > 1) {
         const allAck = bs.every(acked);
         h += `${td}<button class="wc bk ${allAck ? "ackd" : ""} ${bs.every(x => x.status === "draft") ? "draft" : ""}" data-act="bookedMulti" data-d="${d}" data-p="${p}" aria-label="${lb} ${PT(bs[0].lessonType).label} ${bs.length}人">${bs.length}人<small>${multiShort(bs)}</small></button></td>`;
@@ -551,7 +572,7 @@ function render() {
         h += `${td}<button class="wc bk ${acked(b) ? "ackd" : ""} ${b.status === "draft" ? "draft" : ""} ${gone ? "gone" : ""} ${b.result || ""}" data-act="booked" data-id="${b.id}" aria-label="${lb} ${esc(nm(s))}${gone ? " 教習生が空き時間を取り消しました" : ""}${acked(b) ? " 教習生が確認済み" : ""}">${esc(s ? shortName(s) : "?")}<small>${b.subUid && !b.result ? `→${esc(String(b.subName || "").slice(0, 3))}` : b.result === "done" ? "実施" : b.result === "absent" ? "欠席" : gone ? "空き取消" : b.cancelRequested ? "キャンセル希望" : b.lessonType ? SHORT[b.lessonType] || PT(b.lessonType).label : b.highway ? "高速" : b.status === "draft" ? "未確定" : acked(b) ? "確認済" : "通知済み"}</small></button></td>`;
       } else if (pk && S.ptype && hasSpecial(pk)) {
         const ev = evaluatePair(pk, d, p, S.ptype), ok = ev.ok, L = PT(S.ptype).label;
-        h += `${td}<button class="wc ${ok ? `cand ${candCls(S.ptype)}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
+        h += `${td}<button class="wc ${ok ? `cand ${S.ptype === "kiken" ? "kk" : "hw"}` : "off"}" ${ok ? `data-act="assignPair" data-s="${pk.token}" data-d="${d}" data-p="${p}" data-t="${S.ptype}"` : "disabled"} aria-label="${lb}${ok ? `から${L}で割り当て可${ev.dark ? "（日没が早い期間のため要確認）" : ""}` : ""}">${ok ? `${spanText(p, S.ptype)}<small>${L}${ev.dark ? "・要確認" : ""}</small>` : ""}</button></td>`;
       } else if (pk) {
         const ok = evaluate(pk, d, p).ok !== false;
         h += `${td}<button class="wc ${ok ? "cand" : "off"}" ${ok ? `data-act="assign" data-s="${pk.token}" data-d="${d}" data-p="${p}"` : "disabled"} aria-label="${lb}${ok ? " 割り当て可" : ""}">${ok ? "◯" : ""}</button></td>`;
@@ -598,14 +619,16 @@ function render() {
 }
 
 function slotSheet(ds, p, type = "normal", start) {
-  const seg = `<div class="seg seg5" role="group" aria-label="教習の種類">${[["normal", "通常"], ["multi", PT("multi").label], ["kiken", KK().label], ["hwSolo", "高速2時限"], ["hw3", "高速3時限"]].map(([v, t]) => `<button aria-pressed="${type === v}" data-act="sheetType" data-v="${v}" data-d="${ds}" data-p="${p}">${t}</button>`).join("")}</div>`;
+  const seg = `<div class="seg seg4" role="group" aria-label="教習の種類">${[["normal", "通常"], ["kiken", KK().label], ["hwSolo", "高速2時限"], ["hw3", "高速3時限"]].map(([v, t]) => `<button aria-pressed="${type === v}" data-act="sheetType" data-v="${v}" data-d="${ds}" data-p="${p}">${t}</button>`).join("")}</div>`;
   if (type !== "normal") return pairSheet(ds, p, start, seg, type);
-  const c = candidates(ds, p);
-  let h = `<h3>${label(ds, p)}（${P[p][0]}〜）<br><span style="font-size:13px;font-weight:400;color:var(--muted)">入れる教習生 ${c.length}人・予約の少ない順</span></h3>${seg}<div class="list">`;
+  // すでに11時限目の人が入っている時限は、一緒に入れられる11時限目の人だけ（複数教習）
+  const g = bookAt(ds, p) ? multiGroup(ds, p) || [] : [];
+  const c = candidates(ds, p).filter(s => !g.length || evaluate(s, ds, p).join);
+  let h = `<h3>${label(ds, p)}（${P[p][0]}〜）<br><span style="font-size:13px;font-weight:400;color:var(--muted)">入れる教習生 ${c.length}人・予約の少ない順</span></h3>${seg}${g.length ? `<div class="banner info">この時限には${g.map(t => esc(nm(ST(t)))).join("・")}が${lessonsOf(2, "multiNo")}時限目で入っています。${lessonsOf(2, "multiNo")}時限目の人は${MULTI().label}として${MULTI().capacity}人まで一緒に入れます。</div>` : ""}<div class="list">`;
   c.forEach(s => {
     const ev = evaluate(s, ds, p), sp = specialTypes(s);
     // 危険予測・高速教習の番の人は、その種類の画面へ進むボタンにする
-    const spName = sp.length > 1 ? "高速教習" : sp.length ? PT(sp[0]).label : "";
+    const spName = sp[0] === "kiken" ? KK().label : "高速教習";
     const note = sp.length ? `<div class="s" style="color:var(--blue)">次は${spName}の番です${sp.length > 1 ? "（2時限か3時限を選べます）" : ""}</div>`
       : ev.ok === false ? `<div class="s" style="color:var(--orange)">${esc(ev.reason)}</div>` : "";
     const btn = sp.length ? `<button class="btn accent" data-act="sheetType" data-v="${sp[0]}" data-d="${ds}" data-p="${p}">${spName}で入れる</button>`
@@ -618,20 +641,20 @@ function slotSheet(ds, p, type = "normal", start) {
 
 function pairSheet(ds, p, start, seg, type) {
   const pairs = pairsWith(p, type), L = PT(type).label, n = LEN(type);
-  let h = `<h3>${md(ds)} ${L}${n > 1 ? `（${n}時限連続）` : `（${p}限）`}</h3>${seg}`;
+  let h = `<h3>${md(ds)} ${L}（${n}時限連続）</h3>${seg}`;
   if (!pairs.length) {
     h += `<div class="banner warn">${type === "hw3" ? `${p}限を含む${L}（3時限）は入れられません（${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみ）。` : `${p}限は前後どちらも休憩をはさむため、${L}（2時限連続）は入れられません。`}</div>`;
     return sheet(h + `<button class="btn full" data-act="close">閉じる</button>`);
   }
   const a = pairs.includes(start) ? start : pairs[0], ps = span(a, type);
-  if (n > 1) h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}" data-t="${type}">${spanText(x, type)}限</button>`).join("")}</div>`;
+  h += `<div class="chips" role="group" aria-label="時限" style="margin-bottom:8px">${pairs.map(x => `<button class="chip o" aria-pressed="${x === a}" data-act="pairStart" data-d="${ds}" data-p="${p}" data-v="${x}" data-t="${type}">${spanText(x, type)}限</button>`).join("")}</div>`;
   // その種類の番（危険予測は12時限目、高速教習は13時限目）が来ている教習生だけ
-  const want = type === "kiken" || type === "multi" ? type : "hwSolo";
+  const want = type === "kiken" ? "kiken" : "hwSolo";
   const grp0 = SHARED.includes(type) ? groupAt(ds, a, type) || [] : [];
   if (grp0.length) h += `<div class="banner info">この時限の${L}には、すでに${grp0.map(t => esc(nm(ST(t)))).join("・")}が入っています（${CAP(type)}人まで一緒に入れます）。</div>`;
   const c = S.students.filter(s => !grp0.includes(s.token) && specialTypes(s).includes(want) && ps.every(q => isFree(s.token, ds, q)))
     .sort((x, y) => weekCount(x.token) - weekCount(y.token) || String(x.deadline || "9").localeCompare(String(y.deadline || "9")));
-  h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${type === "kiken" ? `${KK().label}（${lessonsOf(2, "kikenNo")}時限目）` : type === "multi" ? `${L}（${lessonsOf(2, "multiNo")}時限目）` : `高速教習（${lessonsOf(2, "hwNo")}時限目から）`}の番で、${spanText(a, type)}限${n > 1 ? "がすべて" : "が"}空いている教習生 ${c.length}人</div><div class="list">`;
+  h += `<div style="font-size:13px;color:var(--muted);margin-bottom:8px">${type === "kiken" ? `${KK().label}（${lessonsOf(2, "kikenNo")}時限目）` : `高速教習（${lessonsOf(2, "hwNo")}時限目から）`}の番で、${spanText(a, type)}限がすべて空いている教習生 ${c.length}人</div><div class="list">`;
   c.forEach(s => {
     const ev = evaluatePair(s, ds, a, type);
     const note = !ev.ok ? `<div class="s" style="color:var(--orange)">${esc(ev.reason)}</div>`
@@ -642,16 +665,21 @@ function pairSheet(ds, p, start, seg, type) {
   if (!c.length) h += `<div class="hist"><div>入れられる教習生はいません。</div></div>`;
   sheet(h + `</div><button class="btn full" style="margin-top:10px" data-act="close">閉じる</button>`);
 }
-// 高速教習（3時限）・危険予測・複数教習の予約に、ほかの教習生を一緒に入れるボタン（満員でない時）
+// 高速教習（3時限）・危険予測の予約に、ほかの教習生を一緒に入れるボタン（満員でない時）
 function joinBtn(b) {
+  if (b && !b.lessonType && !b.subUid && !b.result && !isPast(b.date)) {
+    // 11時限目の通常の教習には、ほかの11時限目の人を3人まで一緒に入れられる（複数教習）
+    const g = multiGroup(b.date, b.period);
+    return g && g.length && g.length < MULTI().capacity ? `<button class="btn primary full" data-act="open" data-d="${b.date}" data-p="${b.period}">この時限に一緒に入れる（${MULTI().label}・あと${MULTI().capacity - g.length}人）</button>` : "";
+  }
   if (!b || !SHARED.includes(b.lessonType) || b.result || isPast(b.date)) return "";
   const a = Math.min(...S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period));
   const grp = groupAt(b.date, a, b.lessonType);
   if (!grp || grp.length >= CAP(b.lessonType)) return "";
   return `<button class="btn primary full" data-act="groupJoin" data-d="${b.date}" data-p="${a}" data-t="${b.lessonType}">この${PT(b.lessonType).label}に一緒に入れる（あと${CAP(b.lessonType) - grp.length}人）</button>`;
 }
-// 何人かで入っている枠の短い表示（「高速」「危険」「複数」）
-const multiShort = bs => bs.some(b => b.subUid) ? "依頼含む" : SHORT[bs[0].lessonType] || "高速";
+// 何人かで入っている枠の短い表示（「高速」「危険」）
+const multiShort = bs => bs.some(b => b.subUid) ? "依頼含む" : !bs[0].lessonType ? "複数" : bs[0].lessonType === "kiken" ? SHORT.kiken || "危険" : "高速";
 const lessonsOf = (stage, k) => ((CFG.lessons || {})[stage] || {})[k] || "";
 
 // 学科の受講確認（config の gakkaCheck）：入れようとしている教習が、決まった時限目（第2段階の10・13時限目など）に当たる時に確認を出す
@@ -702,7 +730,7 @@ async function assignPair(tok, ds, a, type = "kiken", force, gk, quiet) {
   const pairId = `${tok.slice(0, 6)}_${ds}_${a}`;
   for (const q of span(a, type)) {
     const data = { instructorUid: S.uid, date: ds, period: q, weekId: wid(), status, cancelRequested: false, lessonType: type, pairId, result: null, stage: s.stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
-    if (isHwType(type)) { data.highway = true; if (ev.dark) data.forced = true; }
+    if (type !== "kiken") { data.highway = true; if (ev.dark) data.forced = true; }
     const ref = await addDoc(collection(db, "students", tok, "bookings"), data);
     S.bookings.push({ id: ref.id, token: tok, ...data }); S.pending.push(S.bookings.at(-1));
   }
@@ -820,7 +848,7 @@ async function autoAssign() {
     if (!pl.ok) { ng.add(s.token); return null; }
     if (mk ? pendingOf(s).length >= extra : pl.total >= lessonMin(s.stage, s)) return null;
     const types = specialTypes(s);
-    return types.includes("kiken") ? ["kiken"] : types.includes("multi") ? ["multi"] : types.length ? ["hw3", "hwSolo"] : [""];
+    return types.includes("kiken") ? ["kiken"] : types.length ? ["hw3", "hwSolo"] : [""];
   };
   // 同じ日に2時限・3時限入れる時は、時間が飛び飛びにならないように：その日のほかの予約から maxGap（2）時限より離れた時限には入れない
   // （4・6・7 のような一つ飛びまではよい。1・9・10、3・6・9 は入れない。依頼者指定）
@@ -1133,7 +1161,7 @@ document.addEventListener("click", async e => {
     else if (a === "booked") {
       const b = S.bookings.find(x => x.id === t.dataset.id); const s = ST(b.token);
       const it = itemOf(b);
-      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(nm(s))}</b>（第${s ? s.stage : "-"}段階）${it && s ? `・${noText(s, it)}` : ""}${typeName(b) ? `<br>${typeName(b)}${b.pairId && LEN(b.lessonType) > 1 ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}${b.status === "confirmed" ? `<br><span class="tag ${b.ackAt ? "ok" : "wait"}">${b.ackAt ? `教習生が確認済み${b.ackAt.toDate ? `（${md(dateStr(b.ackAt.toDate()))} ${String(b.ackAt.toDate().getHours()).padStart(2, "0")}:${String(b.ackAt.toDate().getMinutes()).padStart(2, "0")}）` : ""}` : "教習生はまだ確認していません"}</span>` : ""}`;
+      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(nm(s))}</b>（第${s ? s.stage : "-"}段階）${it && s ? `・${noText(s, it)}` : ""}${typeName(b) ? `<br>${typeName(b)}${b.pairId ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}${b.status === "confirmed" ? `<br><span class="tag ${b.ackAt ? "ok" : "wait"}">${b.ackAt ? `教習生が確認済み${b.ackAt.toDate ? `（${md(dateStr(b.ackAt.toDate()))} ${String(b.ackAt.toDate().getHours()).padStart(2, "0")}:${String(b.ackAt.toDate().getMinutes()).padStart(2, "0")}）` : ""}` : "教習生はまだ確認していません"}</span>` : ""}`;
       if (b.result) {
         sheet(`${head}<br><span class="tag ${b.result === "done" ? "ok" : "wait"}">${b.result === "done" ? "実施済み" : "欠席"}</span></p>
         <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
@@ -1181,7 +1209,7 @@ document.addEventListener("click", async e => {
       // 過ぎた日の予約：実施・欠席のチェック（と付け間違いの取り消し）だけ
       const b = S.bookings.find(x => x.id === t.dataset.id), s = ST(b.token);
       const ids = S.pending.filter(x => x.token === b.token && (b.pairId ? x.pairId === b.pairId : x.id === b.id)).map(x => x.id);
-      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(nm(s))}</b>${typeName(b) ? `<br>${typeName(b)}${b.pairId && LEN(b.lessonType) > 1 ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}<br><span style="font-size:13px;color:var(--muted)">過ぎた日の予約は、実施・欠席のチェックだけできます。</span></p>`;
+      const head = `<h3>${label(b.date, b.period)}</h3><p><b>${esc(nm(s))}</b>${typeName(b) ? `<br>${typeName(b)}${b.pairId ? `（${LEN(b.lessonType)}時限まとめて扱います）` : ""}` : ""}<br><span style="font-size:13px;color:var(--muted)">過ぎた日の予約は、実施・欠席のチェックだけできます。</span></p>`;
       if (b.result) sheet(`${head}<p><span class="tag ${b.result === "done" ? "ok" : "wait"}">${b.result === "done" ? "実施済み" : "欠席"}</span></p>
         <div class="list"><button class="btn full" data-act="unmark" data-id="${b.id}">チェックを取り消す（付け間違いの時）</button><button class="btn full" data-act="close">閉じる</button></div>`);
       else if (b.status !== "confirmed" || !ids.length) sheet(`${head}<p>確定されなかった予約のため、チェックはできません。</p><div class="list"><button class="btn full" data-act="close">閉じる</button></div>`);
@@ -1197,7 +1225,7 @@ document.addEventListener("click", async e => {
     }
     else if (a === "bookedMulti") {
       const ds = t.dataset.d, p = +t.dataset.p, bs = bookingsAt(ds, p);
-      sheet(`<h3>${label(ds, p)}　${bs.some(b => b.subUid) || !bs[0].lessonType ? "この時限の予約" : PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
+      sheet(`<h3>${label(ds, p)}　${bs.some(b => b.subUid) ? "この時限の予約" : !bs[0].lessonType ? MULTI().label : PT(bs[0].lessonType).label}（${bs.length}人）</h3><p style="font-size:13px;color:var(--muted);margin-top:0">名前を押すと、その教習生の予約の詳細（取り消し・変更）を開きます。</p>
         <div class="list">${bs.map(x => { const s = ST(x.token); return `<button class="item" style="width:100%;text-align:left;font:inherit;color:inherit;background:none" data-act="booked" data-id="${x.id}"><div><div class="t">${esc(nm(s) || "?")}</div><div class="s">${x.status === "draft" ? "未確定" : acked(x) ? "確認済" : "通知済み"}</div></div></button>`; }).join("")}</div>
         <div class="list" style="margin-top:10px">${joinBtn(bs[0])}<button class="btn full" data-act="close">閉じる</button></div>`);
     }
