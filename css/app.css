@@ -310,6 +310,7 @@ body.pc #setWrap,body.pc #ntcWrap{max-width:760px;padding:20px 28px 40px}
 .ackchk{display:flex;align-items:center;gap:10px;margin:4px 0 12px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;font-size:16px;font-weight:700;cursor:pointer}
 .ackchk input{width:24px;height:24px;margin:0;accent-color:var(--blue)}
 .ackchk:has(input:checked){border-color:var(--blue);background:var(--blue-soft)}
+.busask{margin:8px 0 10px;padding:14px;border-radius:12px;background:var(--lv3-soft);border:1.5px solid var(--lv3);font-size:16px;font-weight:700;line-height:1.6}
 #nl_ok:disabled{opacity:.45}
 /* 指導員：教習生が確認済みの予約 */
 .wc.bk.ackd{background:var(--green);border-color:var(--green)}

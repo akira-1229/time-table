@@ -190,7 +190,9 @@ const stopped = () => S.student && S.student.active === false;
 // 確かめた月は months/{ym}.sunOk（指導員の画面で、確かめていない日曜日の◯に注意を出すため）
 const isBus = () => S.student && S.student.commute === "bus";
 const isSun = (y, m, d) => new Date(y, m - 1, d).getDay() === 0;
-const busAskHtml = () => `<div class="banner warn" style="margin:8px 0"><b>${esc(CFG.busSundayAsk || "")}</b></div><label class="ackchk"><input type="checkbox" id="bus_chk"> はい、バス以外で来られます</label>`;
+// 確認のフォーム：質問の下に「はい」と、その横にチェックボックス。チェックを入れないと OK を押せない（確実に来られることを確かめる。依頼者指定）
+const busQ = () => `<div class="busask">${esc(CFG.busSundayAsk || "").replace("。", "。<br>")}</div>`;
+const busAskHtml = (id = "bus_chk") => `${busQ()}<label class="ackchk">はい <input type="checkbox" id="${id}"></label>`;
 // 前から付いていた日曜日の◯（まだ確かめていないもの）があれば、開いた時に一度だけ聞く
 function sunPending() {
   if (!isBus() || stopped()) return [];
@@ -210,9 +212,8 @@ function busSundayCheck() {
   if (busySheet()) return setTimeout(busSundayCheck, 2000);
   busAsked = true;
   const ds = [...new Set(sunPending().map(x => `${+x.ym.slice(5)}月${x.d}日`))];
-  sheet(`<h3>日曜日の◯について</h3><p>${ds.join("・")}（日曜日）に◯が付いています。</p>
-    <div class="banner warn"><b>${esc(CFG.busSundayAsk || "")}</b></div>
-    <div class="list"><button class="btn primary full" data-act="busYes">はい、バス以外で来られます</button><button class="btn full" data-act="busNo">いいえ（日曜日の◯を外します）</button></div>`, { mid: true, lock: true });
+  sheet(`<h3>日曜日の確認</h3><p>${ds.join("・")}（日曜日）に◯が付いています。</p>${busAskHtml()}
+    <div class="list"><button class="btn primary full" id="bus_ok" data-act="busYes" disabled>OK</button><button class="btn full" data-act="busNo">来られない（日曜日の◯を外します）</button></div>`, { mid: true, lock: true });
 }
 // 卒業した人（卒業検定に合格）も利用停止と同じく◯は付けられない
 const stopMsg = () => S.student.graduatedOn ? "卒業おめでとうございます。空き時間の登録は終わりました。" : "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
@@ -343,10 +344,10 @@ function dayState(ym, y, m, d) {
 function dayAllSheet(d) {
   const { y, m } = MONTHS[S.mi], ym = ymOf(y, m), st = dayState(ym, y, m, d), on = st.all;
   if (!on && stopped()) return stopSheet();
-  sheet(`<h3>${on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
-    <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : "に全て◯を付けますか？"}</p>
-    ${!on && isBus() && isSun(y, m, d) ? `<div class="banner warn" style="margin:8px 0"><b>${esc(CFG.busSundayAsk || "")}</b></div>` : ""}
-    <label class="ackchk"><input type="checkbox" id="da_chk"> はい${!on && isBus() && isSun(y, m, d) ? "、バス以外で来られます" : ""}</label>
+  const bus = !on && isBus() && isSun(y, m, d);
+  sheet(`<h3>${bus ? "日曜日の確認" : on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
+    <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : bus ? "（日曜日）に全て◯を付けます。" : "に全て◯を付けますか？"}</p>
+    ${bus ? busAskHtml("da_chk") : `<label class="ackchk"><input type="checkbox" id="da_chk"> はい</label>`}
     <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" id="da_ok" data-act="dayAllOk" data-mi="${S.mi}" data-d="${d}" data-on="${on ? 1 : 0}" disabled>OK</button></div>`);
 }
 function removeLockedSheet(ym, d, p) {
@@ -362,7 +363,7 @@ function bulkSheet() {
   h += `</div><div style="font-size:13px;font-weight:700;margin:10px 0 6px">時限</div><div class="chips" style="flex-wrap:wrap">`;
   for (let p = 1; p <= 10; p++) h += `<button class="chip" aria-pressed="${S.bulkP.has(p)}" data-act="bp" data-v="${p}">${p}限</button>`;
   const bus = isBus() && S.bulkW.has(0);
-  h += `</div>${bus ? busAskHtml().replace("はい、バス以外で来られます", "日曜日も、バス以外で来られます（チェックしないと日曜日には付けません）") : ""}<div class="tools" style="margin-top:14px"><button class="btn" data-act="close">閉じる</button><button class="btn primary" data-act="bulkApply">◯を付ける</button></div>`;
+  h += `</div>${bus ? `<div style="margin-top:12px">${busAskHtml()}<p style="font-size:12px;color:var(--muted);margin:-6px 0 0">チェックしないと、日曜日には◯を付けません。</p></div>` : ""}<div class="tools" style="margin-top:14px"><button class="btn" data-act="close">閉じる</button><button class="btn primary" data-act="bulkApply">◯を付ける</button></div>`;
   sheet(h);
 }
 
@@ -414,6 +415,7 @@ document.addEventListener("click", async e => {
     closeSheet(); addSlot(ym, k); render(); scheduleSave(ym); hwCheck();
   }
   else if (a === "busYes" || a === "busNo") {
+    if (a === "busYes" && !document.getElementById("bus_chk")?.checked) return;
     const list = sunPending(), yms = [...new Set(list.map(x => x.ym))];
     // 「いいえ」は日曜日の◯を外す（バスが無いため。締切後でも外してよい）
     if (a === "busNo") list.forEach(x => S.avail[x.ym].delete(slotKey(x.d, x.p)));
@@ -432,7 +434,8 @@ document.addEventListener("click", async e => {
       // 指が触れただけで◯が付かないように、付ける前に確認する
       const ds = dateStr(new Date(y, m - 1, +t.dataset.d)), p = +t.dataset.p;
       const bus = isBus() && isSun(y, m, +t.dataset.d);
-      sheet(`<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>${bus ? busAskHtml() : ""}
+      sheet(`${bus ? `<h3>日曜日の確認</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けます。</p>${busAskHtml()}`
+        : `<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>`}
         <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" ${bus ? 'id="bus_ok" disabled' : ""} data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
     }
   }
