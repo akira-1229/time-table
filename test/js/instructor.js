@@ -985,11 +985,46 @@ async function markResult(ids, result, mk = null) {
   S.bookings.forEach(b => { if (ids.includes(b.id)) b.result = result; });
   render();
   const planGone = mk && !mk.passed && planWas ? `。決まっていた検定日（${md(planWas)}）は取り消しました` : "";
+  // その日の最後の教習のチェックなら、一日のまとめを出す（下の報告書の案内が出る時は、それを閉じた後に出る）
+  if (!mk || mk.gakkaDone) daySummary(ids).catch(noteIndex); else S.dayAfter = ids;
   if (!mk || mk.gakkaDone) toast(result === "done" ? `${nm(s)} ${text} を実施にしました${mk ? `（みきわめ${mk.passed ? "合格" : "不合格"}）` : ""}${planGone}` : `${nm(s)}に欠席を通知しました`);
   else sheet(`<h3>${esc(nm(s))}を実施にしました（みきわめ${mk.passed ? "合格" : "不合格"}）</h3>
     <div class="banner warn">「<b>検定日の2日前までに学科及び効果測定を終わらせておかないといけません</b>」ということを教習生に伝えてください。</div>
     <div class="banner warn">学科及び効果測定が終了していない教習生に対する<b>みきわめ報告書</b>を提出してください。</div>
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
+}
+/* ---------- 一日のまとめ（依頼者指定） ---------- */
+// 今日の最後の教習（例：10時限目）が終わっていて、そのチェックを入れた時に「本日の全ての教習が終了しました。一日お疲れ様でした！」を出し、
+// 今日の教習がすべて実施・欠席のチェック済みか確かめる。未チェックの教習生は赤く点滅させ、その場でチェックできる。
+// 1人でも未チェックなら OK は押せない（外側を押しても閉じない）。全部済んだら OK で閉じて元の画面に戻る
+async function todayItems() {
+  const snap = await getDocs(query(collectionGroup(db, "bookings"), where("instructorUid", "==", S.uid), where("date", "==", dateStr(today()))));
+  return lessonItems(snap.docs.map(d => ({ id: d.id, token: d.ref.parent.parent.id, ...d.data() })).filter(b => b.status === "confirmed"));
+}
+async function daySummary(markedIds) {
+  const ds = dateStr(today()), its = await todayItems();
+  if (!its.length) return;
+  if (S.daySum !== ds) {
+    // 今チェックしたのが今日の最後の時限の教習で、その時限が終わっている時だけ出す
+    const lastP = Math.max(...its.flatMap(it => it.bookings.map(b => b.period)));
+    const lastB = its.flatMap(it => it.bookings).filter(b => b.period === lastP);
+    if (!markedIds || !lastB.some(b => markedIds.includes(b.id)) || bookingEnd(lastB[0]) > new Date()) return;
+    S.daySum = ds;
+  }
+  const done = its.filter(it => it.bookings[0].result).length, all = done === its.length;
+  const rows = its.map(it => {
+    const b = it.bookings[0], s = ST(b.token), ids = it.bookings.map(x => x.id).join(",");
+    const name = s ? nm(s) : b.subStudent || "（担当外の教習生）";
+    const what = `${it.bookings.map(x => x.period).join("・")}限${typeName(b) ? `（${typeName(b)}）` : ""}${b.subUid ? `・${esc(b.subName || "")}さんに依頼` : ""}`;
+    const st = b.result === "done" ? '<span class="tag ok">実施</span>' : b.result === "absent" ? '<span class="tag wait">欠席</span>'
+      : `<span style="display:flex;gap:6px"><button class="btn" data-act="markAbsent" data-ids="${ids}">欠席</button><button class="btn accent" data-act="markDone" data-ids="${ids}">実施</button></span>`;
+    return `<div class="item dsrow${b.result ? "" : " k2blink"}"><div><div class="t">${esc(name)}</div><div class="s">${what}${b.result ? "" : "・<b style=\"color:var(--lv3)\">未チェック</b>"}</div></div>${st}</div>`;
+  }).join("");
+  sheet(`<div class="notice-head"><h3>本日の全ての教習が終了しました。<br>一日お疲れ様でした！</h3></div>
+    <p style="font-size:13px;color:var(--muted);text-align:center;margin:4px 0 10px">今日の教習（${its.length}件）の実施・欠席のチェックを確認してください。</p>
+    <div class="list">${rows}</div>
+    ${all ? `<div class="banner ok" style="margin-top:10px">すべての教習にチェックが入っています。</div>` : `<div class="banner warn" style="margin-top:10px"><b>まだチェックが入っていない教習生が${its.length - done}人います。</b><br>赤く点滅している教習生の「実施」か「欠席」を押してください。全部入るまでOKは押せません。</div>`}
+    <div class="list" style="margin-top:10px"><button class="btn primary full" data-act="daySumOk" ${all ? "" : "disabled"}>OK</button></div>`, { mid: true, lock: true });
 }
 // みきわめの教習を「実施」にする時のフォーム（合否・検定日・学科及び効果測定）
 // 第1段階の検定日の欄：生年月日を持たせて、18歳の誕生日より前の日を入れた時にすぐ警告する（高校生。依頼者指定）
@@ -1131,7 +1166,8 @@ onViewChange(() => { if (S.uid && S.me) { render(); if (S.view === "settings") r
 
 /* ---------- 操作 ---------- */
 document.addEventListener("click", async e => {
-  if (onOverlayClose(e)) return;
+  // 一日のまとめ（全部チェックするまで閉じられない）の途中で、ほかのシート（みきわめのフォームなど）を閉じた時は、まとめに戻る
+  if (onOverlayClose(e)) { if (S.daySum === dateStr(today()) || S.dayAfter) { const ids = S.dayAfter; S.dayAfter = null; daySummary(ids).catch(noteIndex); } return; }
   const t = e.target.closest("[data-act]"); if (!t) return;
   const a = t.dataset.act;
   try {
@@ -1353,6 +1389,7 @@ document.addEventListener("click", async e => {
       const mk = { passed: pass === "1", kenteiDate: pass === "1" && !und ? date : null, kenteiUndecided: pass === "1" && und, gakkaDone: gakka === "1" };
       t.disabled = true; closeSheet(); await markResult(t.dataset.ids.split(","), "done", mk);
     }
+    else if (a === "daySumOk") { S.daySum = null; closeSheet(); render(); }
     else if (a === "unmark") { closeSheet(); await unmarkResult(S.bookings.find(x => x.id === t.dataset.id)); }
     else if (a === "approve") {
       const b = S.cancelReqs.find(x => x.id === t.dataset.id); t.disabled = true;

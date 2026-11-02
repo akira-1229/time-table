@@ -234,7 +234,8 @@ export function toast(t) {
 export function sheet(html, opts = {}) {
   let ov = document.getElementById("overlay");
   if (!ov) { ov = document.createElement("div"); ov.id = "overlay"; document.body.appendChild(ov); }
-  ov.innerHTML = `<div class="sheet-bg${opts.notice ? " mid notice" : ""}" data-act="close"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  // mid：画面の真ん中に出す。lock：外側を押しても閉じない（シートの中のボタンで閉じる）
+  ov.innerHTML = `<div class="sheet-bg${opts.notice ? " mid notice" : opts.mid ? " mid" : ""}"${opts.lock ? "" : ' data-act="close"'}><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
 }
 // いまお知らせ以外のシート（入力中の画面など）が開いているか
 export const busySheet = () => !!document.querySelector("#overlay .sheet-bg:not(.notice)");
