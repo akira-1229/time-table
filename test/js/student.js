@@ -213,7 +213,7 @@ function busSundayCheck() {
   busAsked = true;
   const ds = [...new Set(sunPending().map(x => `${+x.ym.slice(5)}月${x.d}日`))];
   sheet(`<h3>日曜日の確認</h3><p>${ds.join("・")}（日曜日）に◯が付いています。</p>${busAskHtml()}
-    <div class="list"><button class="btn primary full" id="bus_ok" data-act="busYes" disabled>OK</button><button class="btn full" data-act="busNo">来られない（日曜日の◯を外します）</button></div>`, { mid: true, lock: true });
+    <div class="list"><button class="btn primary full" id="bus_ok" data-act="busYes" disabled>OK</button><button class="btn full" data-act="busNo">いいえ　行けません</button></div>`, { mid: true, lock: true });
 }
 // 卒業した人（卒業検定に合格）も利用停止と同じく◯は付けられない
 const stopMsg = () => S.student.graduatedOn ? "卒業おめでとうございます。空き時間の登録は終わりました。" : "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
@@ -348,7 +348,7 @@ function dayAllSheet(d) {
   sheet(`<h3>${bus ? "日曜日の確認" : on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
     <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : bus ? "（日曜日）に全て◯を付けます。" : "に全て◯を付けますか？"}</p>
     ${bus ? busAskHtml("da_chk") : `<label class="ackchk"><input type="checkbox" id="da_chk"> はい</label>`}
-    <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" id="da_ok" data-act="dayAllOk" data-mi="${S.mi}" data-d="${d}" data-on="${on ? 1 : 0}" disabled>OK</button></div>`);
+    <div class="tools"><button class="btn" data-act="close">${bus ? "いいえ　行けません" : "やめる"}</button><button class="btn primary" id="da_ok" data-act="dayAllOk" data-mi="${S.mi}" data-d="${d}" data-on="${on ? 1 : 0}" disabled>OK</button></div>`);
 }
 function removeLockedSheet(ym, d, p) {
   const [y, m] = ym.split("-").map(Number);
@@ -420,7 +420,7 @@ document.addEventListener("click", async e => {
     // 「いいえ」は日曜日の◯を外す（バスが無いため。締切後でも外してよい）
     if (a === "busNo") list.forEach(x => S.avail[x.ym].delete(slotKey(x.d, x.p)));
     yms.forEach(ym => { S.sunOk[ym] = true; scheduleSave(ym); });
-    closeSheet(); render(); toast(a === "busNo" ? "日曜日の◯を外しました" : "ありがとうございます。日曜日の◯はそのままにしました");
+    closeSheet(); render(); toast(a === "busNo" ? "日曜日の◯を外しました（バス以外で来られないため）" : "ありがとうございます。日曜日の◯はそのままにしました");
   }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
@@ -436,7 +436,7 @@ document.addEventListener("click", async e => {
       const bus = isBus() && isSun(y, m, +t.dataset.d);
       sheet(`${bus ? `<h3>日曜日の確認</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けます。</p>${busAskHtml()}`
         : `<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>`}
-        <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" ${bus ? 'id="bus_ok" disabled' : ""} data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
+        <div class="tools"><button class="btn" data-act="close">${bus ? "いいえ　行けません" : "やめる"}</button><button class="btn primary" ${bus ? 'id="bus_ok" disabled' : ""} data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
     }
   }
   else if (a === "copy") {
