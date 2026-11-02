@@ -457,15 +457,23 @@ function drawAvail() {
 async function availToggle(t) {
   const d = t.dataset.d, ps = t.dataset.act === "avDay" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [+t.dataset.p];
   if (!AV.days.includes(d)) return toast("登録から1ヶ月を過ぎた日は入れられません");
-  const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? t.checked : !avOn(d, ps[0]);
-  // バスの人の日曜日は、バス以外で来られることを確かめてから入れる（依頼者指定）
-  if (on && AV.s.commute === "bus" && new Date(d + "T00:00:00").getDay() === 0) {
-    if (!confirm(`${AV.s.name}さんはバスで通っています。\n${CFG.busSundayAsk || ""}\n\n本人に確かめた上で◯を付けますか？`)) { drawAvail(); return; }
-    AV.m[ym].sunOk = true;
-  }
+  const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? (t.dataset.on ? true : t.checked) : !avOn(d, ps[0]);
+  // バスの人の日曜日は、教習生の画面と同じフォームで、バス以外で来られることを確かめてから入れる（依頼者指定）
+  if (on && AV.s.commute === "bus" && new Date(d + "T00:00:00").getDay() === 0 && !t.dataset.busok) return availBusSheet(d, ps);
+  if (t.dataset.busok) AV.m[ym].sunOk = true;
   ps.forEach(p => on ? set.add(slotKey(+d.slice(8), p)) : set.delete(slotKey(+d.slice(8), p)));
   drawAvail();
   await setDoc(doc(db, "students", AV.s.token, "months", ym), { slots: [...set], updatedAt: serverTimestamp(), late: AV.m[ym].late, sunOk: AV.m[ym].sunOk });
+}
+// バスの人の日曜日：「日曜日はバスが運行していません。自転車など、バス以外で来られますか？」の下に「はい」とチェックボックス。
+// チェックを入れて OK で◯が入り、「いいえ　行けません」は◯を付けずに空き時間の表に戻る
+function availBusSheet(d, ps) {
+  const w = new Date(d + "T00:00:00");
+  sheet(`<h3>日曜日の確認</h3><p style="font-size:16px"><b>${esc(AV.s.name)}さん</b>（通学方法：バス）<br><b>${w.getMonth() + 1}月${w.getDate()}日(${WD[w.getDay()]}) ${ps.length > 1 ? "全部の時限" : `${ps[0]}限`}</b>に◯を付けます。</p>
+    <div class="busask">${esc(CFG.busSundayAsk || "").replace("。", "。<br>")}</div>
+    <p style="font-size:13px;color:var(--muted);margin:-4px 0 8px">教習生本人に確かめてから入れてください。</p>
+    <label class="ackchk">はい <input type="checkbox" id="avbus_chk"></label>
+    <div class="tools"><button class="btn" style="white-space:nowrap" data-act="avBusNo">いいえ　行けません</button><button class="btn primary" id="avbus_ok" data-act="${ps.length > 1 ? "avDay" : "avCell"}" data-d="${d}" data-p="${ps[0]}" data-busok="1" ${ps.length > 1 ? "data-on=\"1\"" : ""} disabled>OK</button></div>`, { mid: true, lock: true });
 }
 // 1人分のQRコードを大きく出す。登録・再発行の直後と、編集画面の「QRコードを表示する」から
 function qrSheet(st, done = "") {
@@ -560,6 +568,7 @@ document.addEventListener("change", e => {
   if (ng) toast(ng);
 });
 document.addEventListener("change", e => {
+  if (e.target.id === "avbus_chk") { document.getElementById("avbus_ok").disabled = !e.target.checked; return; }
   if (e.target.dataset.act === "selPage") { filtered().forEach(s => e.target.checked ? S.sel.add(s.token) : S.sel.delete(s.token)); render(); return; }
   if (e.target.dataset.act === "sel") { const k = e.target.dataset.s; e.target.checked ? S.sel.add(k) : S.sel.delete(k); render(); } });
 document.addEventListener("click", async e => {
@@ -585,6 +594,7 @@ document.addEventListener("click", async e => {
     else if (a === "showQR") qrSheet(S.students.find(s => s.token === t.dataset.s));
     else if (a === "availEdit") await availSheet(S.students.find(s => s.token === t.dataset.s));
     else if (a === "avCell" || a === "avDay") await availToggle(t);
+    else if (a === "avBusNo") drawAvail();
     else if (a === "avBack") editSheet(S.students.find(s => s.token === t.dataset.s));
     else if (a === "printOne") { S.sel = new Set([t.dataset.s]); closeSheet(); render(); printCards(); }
     else if (a === "doPrint") window.print();
