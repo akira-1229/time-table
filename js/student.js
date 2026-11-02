@@ -21,7 +21,7 @@ const MONTHS = [
   { y: now.getFullYear(), m: now.getMonth() + 1 },
   { y: new Date(now.getFullYear(), now.getMonth() + 1, 1).getFullYear(), m: new Date(now.getFullYear(), now.getMonth() + 1, 1).getMonth() + 1 }
 ];
-const S = { tab: "cal", mi: 1, student: null, avail: {}, offs: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
+const S = { tab: "cal", mi: 1, student: null, avail: {}, sunOk: {}, offs: {}, bookings: [], saveTimers: {}, bulkW: new Set(), bulkP: new Set(), addedNow: {} };
 
 async function load() {
   if (!T) return fail("QRコードから開いてください。QRコードが手元にない場合は、事務所にお問い合わせください。");
@@ -32,6 +32,7 @@ async function load() {
     for (const { y, m } of MONTHS) {
       const md_ = await getDoc(doc(db, "students", T, "months", ymOf(y, m)));
       S.avail[ymOf(y, m)] = new Set(md_.exists() ? md_.data().slots || [] : []);
+      S.sunOk[ymOf(y, m)] = !!(md_.exists() && md_.data().sunOk);
       // 担当指導員の✕（教習に出られない時間）も見せる（依頼者指定。読めない時は出さないだけ）
       try { const od = S.student.instructorUid ? await getDoc(doc(db, "offs", `${S.student.instructorUid}_${ymOf(y, m)}`)) : null; S.offs[ymOf(y, m)] = new Set(od && od.exists() ? od.data().slots || [] : []); }
       catch (e) { S.offs[ymOf(y, m)] = new Set(); }
@@ -40,7 +41,7 @@ async function load() {
     S.bookings = (await getDocs(bq)).docs.map(d => ({ id: d.id, ...d.data() }));
     S.mi = nextMonthFilled() ? 0 : 1;
     render();
-    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); firstVisitInstall("student"); trackAccess("student", T, S.student.instructorUid); }
+    if (!watching) { watching = true; watch(bq); listenForeground(() => load()); showNextLesson(); busSundayCheck(); firstVisitInstall("student"); trackAccess("student", T, S.student.instructorUid); }
   } catch (e) { fail(friendlyError(e)); }
 }
 // 指導員が予約を確定・取り消しした時や、通知を送った時に、開いたままの画面にもすぐ反映する
@@ -185,6 +186,34 @@ document.addEventListener("pref:change", () => { if (S.student) render(); });
 
 // 利用停止中（指導員が「停止」にした人）は◯を付けられない（依頼者指定の文言）
 const stopped = () => S.student && S.student.active === false;
+// 通学方法がバスの人：日曜日はバスが運行していないため、日曜日に◯を付ける時は「バス以外で来られますか？」と確かめる（依頼者指定）。
+// 確かめた月は months/{ym}.sunOk（指導員の画面で、確かめていない日曜日の◯に注意を出すため）
+const isBus = () => S.student && S.student.commute === "bus";
+const isSun = (y, m, d) => new Date(y, m - 1, d).getDay() === 0;
+const busAskHtml = () => `<div class="banner warn" style="margin:8px 0"><b>${esc(CFG.busSundayAsk || "")}</b></div><label class="ackchk"><input type="checkbox" id="bus_chk"> はい、バス以外で来られます</label>`;
+// 前から付いていた日曜日の◯（まだ確かめていないもの）があれば、開いた時に一度だけ聞く
+function sunPending() {
+  if (!isBus() || stopped()) return [];
+  const out = [];
+  MONTHS.forEach(({ y, m }, mi) => {
+    const ym = ymOf(y, m); if (S.sunOk[ym]) return;
+    for (let d = mi === 0 ? now.getDate() : 1; d <= daysIn(y, m); d++) if (isSun(y, m, d)) {
+      const ds = dateStr(new Date(y, m - 1, d));
+      for (let p = 1; p <= 10; p++) if (S.avail[ym].has(slotKey(d, p)) && !confirmedAt(ds, p)) out.push({ ym, d, p });
+    }
+  });
+  return out;
+}
+let busAsked = false;
+function busSundayCheck() {
+  if (busAsked || !sunPending().length) return;
+  if (busySheet()) return setTimeout(busSundayCheck, 2000);
+  busAsked = true;
+  const ds = [...new Set(sunPending().map(x => `${+x.ym.slice(5)}月${x.d}日`))];
+  sheet(`<h3>日曜日の◯について</h3><p>${ds.join("・")}（日曜日）に◯が付いています。</p>
+    <div class="banner warn"><b>${esc(CFG.busSundayAsk || "")}</b></div>
+    <div class="list"><button class="btn primary full" data-act="busYes">はい、バス以外で来られます</button><button class="btn full" data-act="busNo">いいえ（日曜日の◯を外します）</button></div>`, { mid: true, lock: true });
+}
 // 卒業した人（卒業検定に合格）も利用停止と同じく◯は付けられない
 const stopMsg = () => S.student.graduatedOn ? "卒業おめでとうございます。空き時間の登録は終わりました。" : "現在、指導員により利用停止中です。詳しくは指導員にご連絡ください。";
 const stopSheet = () => sheet(`<h3>◯を付けられません</h3><p style="font-size:16px">${stopMsg()}</p><div class="list"><button class="btn primary full" data-act="close">閉じる</button></div>`);
@@ -300,7 +329,7 @@ function scheduleSave(ym) {
   clearTimeout(S.saveTimers[ym]);
   S.saveTimers[ym] = setTimeout(async () => {
     try {
-      await setDoc(doc(db, "students", T, "months", ym), { slots: [...S.avail[ym]], updatedAt: serverTimestamp(), late: isLate(ym) });
+      await setDoc(doc(db, "students", T, "months", ym), { slots: [...S.avail[ym]], updatedAt: serverTimestamp(), late: isLate(ym), ...(S.sunOk[ym] ? { sunOk: true } : {}) });
     } catch (e) { toast(friendlyError(e)); }
   }, 700);
 }
@@ -316,7 +345,8 @@ function dayAllSheet(d) {
   if (!on && stopped()) return stopSheet();
   sheet(`<h3>${on ? "◯を全て外しますか？" : "◯を全て付けますか？"}</h3>
     <p style="font-size:16px"><b>${m}月${d}日</b>${on ? "の◯を全て外しますか？" : "に全て◯を付けますか？"}</p>
-    <label class="ackchk"><input type="checkbox" id="da_chk"> はい</label>
+    ${!on && isBus() && isSun(y, m, d) ? `<div class="banner warn" style="margin:8px 0"><b>${esc(CFG.busSundayAsk || "")}</b></div>` : ""}
+    <label class="ackchk"><input type="checkbox" id="da_chk"> はい${!on && isBus() && isSun(y, m, d) ? "、バス以外で来られます" : ""}</label>
     <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" id="da_ok" data-act="dayAllOk" data-mi="${S.mi}" data-d="${d}" data-on="${on ? 1 : 0}" disabled>OK</button></div>`);
 }
 function removeLockedSheet(ym, d, p) {
@@ -331,13 +361,15 @@ function bulkSheet() {
   [1, 2, 3, 4, 5, 6, 0].forEach(w => { h += `<button class="chip" aria-pressed="${S.bulkW.has(w)}" data-act="bw" data-v="${w}">${WD[w]}</button>`; });
   h += `</div><div style="font-size:13px;font-weight:700;margin:10px 0 6px">時限</div><div class="chips" style="flex-wrap:wrap">`;
   for (let p = 1; p <= 10; p++) h += `<button class="chip" aria-pressed="${S.bulkP.has(p)}" data-act="bp" data-v="${p}">${p}限</button>`;
-  h += `</div><div class="tools" style="margin-top:14px"><button class="btn" data-act="close">閉じる</button><button class="btn primary" data-act="bulkApply">◯を付ける</button></div>`;
+  const bus = isBus() && S.bulkW.has(0);
+  h += `</div>${bus ? busAskHtml().replace("はい、バス以外で来られます", "日曜日も、バス以外で来られます（チェックしないと日曜日には付けません）") : ""}<div class="tools" style="margin-top:14px"><button class="btn" data-act="close">閉じる</button><button class="btn primary" data-act="bulkApply">◯を付ける</button></div>`;
   sheet(h);
 }
 
 document.addEventListener("change", e => {
   if (e.target.id === "nl_chk") document.getElementById("nl_ok").disabled = !e.target.checked;
   if (e.target.id === "da_chk") document.getElementById("da_ok").disabled = !e.target.checked;
+  if (e.target.id === "bus_chk") { const ok = document.getElementById("bus_ok"); if (ok) ok.disabled = !e.target.checked; }
 });
 document.addEventListener("click", async e => {
   if (onOverlayClose(e)) return;
@@ -370,6 +402,7 @@ document.addEventListener("click", async e => {
         <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
     } else {
       if (stopped()) return stopSheet();
+      if (isBus() && isSun(y, m, d)) S.sunOk[ym] = true;
       st.free.forEach(p => addSlot(ym, slotKey(d, p)));
       closeSheet(); render(); scheduleSave(ym); if (!hwCheck()) toast(`${m}月${d}日の全ての時限に◯を付けました`);
     }
@@ -377,7 +410,15 @@ document.addEventListener("click", async e => {
   else if (a === "addOk") {
     if (stopped()) return stopSheet();
     const mi = +t.dataset.mi, { y, m } = MONTHS[mi], ym = ymOf(y, m), k = slotKey(+t.dataset.d, +t.dataset.p);
+    if (isBus() && isSun(y, m, +t.dataset.d)) { if (!document.getElementById("bus_chk")?.checked) return; S.sunOk[ym] = true; }
     closeSheet(); addSlot(ym, k); render(); scheduleSave(ym); hwCheck();
+  }
+  else if (a === "busYes" || a === "busNo") {
+    const list = sunPending(), yms = [...new Set(list.map(x => x.ym))];
+    // 「いいえ」は日曜日の◯を外す（バスが無いため。締切後でも外してよい）
+    if (a === "busNo") list.forEach(x => S.avail[x.ym].delete(slotKey(x.d, x.p)));
+    yms.forEach(ym => { S.sunOk[ym] = true; scheduleSave(ym); });
+    closeSheet(); render(); toast(a === "busNo" ? "日曜日の◯を外しました" : "ありがとうございます。日曜日の◯はそのままにしました");
   }
   else if (a === "month") { S.mi = +t.dataset.v; render(); }
   else if (a === "toggle") {
@@ -390,8 +431,9 @@ document.addEventListener("click", async e => {
       if (stopped()) return stopSheet();
       // 指が触れただけで◯が付かないように、付ける前に確認する
       const ds = dateStr(new Date(y, m - 1, +t.dataset.d)), p = +t.dataset.p;
-      sheet(`<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>
-        <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
+      const bus = isBus() && isSun(y, m, +t.dataset.d);
+      sheet(`<h3>◯を付けますか？</h3><p style="font-size:16px"><b>${label(ds, p)}</b>（${P[p][0]}〜${P[p][1]}）に◯を付けますか？</p>${bus ? busAskHtml() : ""}
+        <div class="tools"><button class="btn" data-act="close">やめる</button><button class="btn primary" ${bus ? 'id="bus_ok" disabled' : ""} data-act="addOk" data-mi="${S.mi}" data-d="${t.dataset.d}" data-p="${p}">OK</button></div>`);
     }
   }
   else if (a === "copy") {
@@ -405,8 +447,10 @@ document.addEventListener("click", async e => {
     const ym = ymOf(nx.y, nx.m); let n = 0;
     for (let d = 1; d <= daysIn(nx.y, nx.m); d++) {
       const w = new Date(nx.y, nx.m - 1, d).getDay();
+      if (w === 0 && isBus() && !S.sunOk[ymOf(cur.y, cur.m)]) continue;   // バスの人の日曜日は、今月で確かめていなければ写さない
       Object.entries(pat[w] || {}).forEach(([p, c]) => { if (c >= 2) { addSlot(ym, slotKey(d, +p)); n++; } });
     }
+    if (isBus() && S.sunOk[ymOf(cur.y, cur.m)]) S.sunOk[ym] = true;
     render(); scheduleSave(ym); if (!(n && hwCheck())) toast(n ? "今月と同じ曜日・時限に◯を付けました" : "今月の入力が少ないため、写せる予定がありませんでした");
   }
   else if (a === "bulk" && stopped()) stopSheet();
@@ -415,6 +459,8 @@ document.addEventListener("click", async e => {
   else if (a === "bp") { const v = +t.dataset.v; S.bulkP.has(v) ? S.bulkP.delete(v) : S.bulkP.add(v); bulkSheet(); }
   else if (a === "bulkApply") {
     const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); let n = 0;
+    // バスの人の日曜日は「バス以外で来られます」にチェックした時だけ
+    if (isBus() && S.bulkW.has(0)) { if (document.getElementById("bus_chk")?.checked) S.sunOk[ym] = true; else S.bulkW.delete(0); }
     // 今月は今日から（過ぎた日には付けない）
     for (let d = S.mi === 0 ? now.getDate() : 1; d <= daysIn(y, m); d++) if (S.bulkW.has(new Date(y, m - 1, d).getDay())) S.bulkP.forEach(p => {
       const ds = dateStr(new Date(y, m - 1, d)); if (!confirmedAt(ds, p)) { addSlot(ym, slotKey(d, p)); n++; }

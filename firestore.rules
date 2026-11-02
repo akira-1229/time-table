@@ -74,7 +74,7 @@ service cloud.firestore {
         allow create, update: if isAdmin() || ownsStudent(t)
           || (studentData(t).active == true
               && ym.matches('^[0-9]{4}-[0-9]{2}$')
-              && request.resource.data.keys().hasOnly(['slots', 'updatedAt', 'late'])
+              && request.resource.data.keys().hasOnly(['slots', 'updatedAt', 'late', 'sunOk'])
               && request.resource.data.slots is list
               && request.resource.data.slots.size() <= 310);
         allow delete: if isAdmin() || ownsStudent(t);

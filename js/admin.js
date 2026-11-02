@@ -325,6 +325,7 @@ function editSheet(s) {
   <div></div></div>
   <div class="row"><div class="field"><label for="f_lic">希望免許</label><select id="f_lic">${opt("", s.license || "", "選んでください")}${[...new Set([...(CFG.licenseTypes || []), ...(s.license ? [s.license] : [])])].map(x => opt(x, s.license || "")).join("")}</select></div>
   <div class="field"><label for="f_held">所持免許</label><input id="f_held" list="dl_held" value="${esc(s.heldLicense || "")}" autocomplete="off"></div></div>
+  <div class="row"><div class="field"><label for="f_com">通学方法</label><select id="f_com">${opt("", s.commute || "", "選んでください")}${Object.entries(CFG.commuteTypes || {}).map(([k, t]) => opt(k, s.commute || "", t)).join("")}</select><span style="font-size:12px;color:var(--muted)">バスの人は、日曜日に◯を付ける時に「バス以外で来られますか？」と確認します</span></div><div></div></div>
   <div class="row">${DATES.map(([k, t]) => `<div class="field"><label for="f_${k}">${t}${k === "karimenExpiry" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（交付日から自動）</span>` : k === "classStart" || k === "deadline" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（教習開始日から自動）</span>` : k === "skillStart" ? `<span style="font-weight:400;color:var(--muted);font-size:11px">（最初の教習を実施にした日が自動で入ります）</span>` : ""}</label>${wdateInput(k, s[k])}</div>`).join("")}</div>
   <p style="font-size:12px;color:var(--muted);margin:-4px 0 10px">日付は和暦の6桁で入れます（例：平成19年6月22日 → 190622）。6桁打つと西暦に変わって、次の欄に進みます。入っている日付を押すと6桁に戻るので、そのまま直せます。</p>
   <h3 style="margin-top:6px">教習の状況</h3>
@@ -429,7 +430,7 @@ async function availSheet(s) {
   if (!AV.days.length) return toast("登録から1ヶ月を過ぎたため、空き時間は入れられません");
   for (const ym of [...new Set(AV.days.map(d => d.slice(0, 7)))]) {
     const r = await getDoc(doc(db, "students", s.token, "months", ym));
-    AV.m[ym] = { slots: new Set(r.exists() ? r.data().slots || [] : []), late: !!(r.exists() && r.data().late) };
+    AV.m[ym] = { slots: new Set(r.exists() ? r.data().slots || [] : []), late: !!(r.exists() && r.data().late), sunOk: !!(r.exists() && r.data().sunOk) };
   }
   drawAvail();
 }
@@ -457,9 +458,14 @@ async function availToggle(t) {
   const d = t.dataset.d, ps = t.dataset.act === "avDay" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [+t.dataset.p];
   if (!AV.days.includes(d)) return toast("登録から1ヶ月を過ぎた日は入れられません");
   const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? t.checked : !avOn(d, ps[0]);
+  // バスの人の日曜日は、バス以外で来られることを確かめてから入れる（依頼者指定）
+  if (on && AV.s.commute === "bus" && new Date(d + "T00:00:00").getDay() === 0) {
+    if (!confirm(`${AV.s.name}さんはバスで通っています。\n${CFG.busSundayAsk || ""}\n\n本人に確かめた上で◯を付けますか？`)) { drawAvail(); return; }
+    AV.m[ym].sunOk = true;
+  }
   ps.forEach(p => on ? set.add(slotKey(+d.slice(8), p)) : set.delete(slotKey(+d.slice(8), p)));
   drawAvail();
-  await setDoc(doc(db, "students", AV.s.token, "months", ym), { slots: [...set], updatedAt: serverTimestamp(), late: AV.m[ym].late });
+  await setDoc(doc(db, "students", AV.s.token, "months", ym), { slots: [...set], updatedAt: serverTimestamp(), late: AV.m[ym].late, sunOk: AV.m[ym].sunOk });
 }
 // 1人分のQRコードを大きく出す。登録・再発行の直後と、編集画面の「QRコードを表示する」から
 function qrSheet(st, done = "") {
@@ -590,7 +596,7 @@ document.addEventListener("click", async e => {
       const num = (id, max) => { const x = v(id); return x === "" ? null : Math.min(max, Math.max(0, Math.floor(+x))); };
       const data = {
         studentNo: (n => n ? n.padStart(4, "0") : "")(toHalfDigits(v("f_no")).replace(/\D/g, "")), name: v("f_nm").replace(/\s+/g, " "), nameKana: toKatakana(v("f_kana")), stage: +v("f_st"), instructorUid: S.isAdmin ? v("f_in") : S.uid, active: v("f_ac") === "1",
-        birthDate: vd("birthDate") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null
+        birthDate: vd("birthDate") || null, license: v("f_lic") || null, heldLicense: v("f_held") || null, commute: v("f_com") || null
       };
       DATES.forEach(([k]) => { data[k] = vd(k) || null; });
       // 教習生番号は必須（同じ名字の人を番号で見分けるため。依頼者指定）

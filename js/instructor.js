@@ -198,12 +198,13 @@ async function renderOff() {
 }
 function watchAvail(yms) {
   stopWatch();
-  S.avail = {}; S.late = {}; lateM = {};
+  S.avail = {}; S.late = {}; S.sunOk = {}; lateM = {};
   return Promise.all(S.students.flatMap(s => yms.map(ym => new Promise(resolve => {
     let first = true;
     unwatch.push(onSnapshot(doc(db, "students", s.token, "months", ym), m => {
       S.avail[s.token] = S.avail[s.token] || {};
       S.avail[s.token][ym] = new Set(m.exists() ? m.data().slots || [] : []);
+      (S.sunOk[s.token] = S.sunOk[s.token] || {})[ym] = !!(m.exists() && m.data().sunOk);
       lateM[s.token] = { ...lateM[s.token], [ym]: !!(m.exists() && m.data().late) };
       S.late[s.token] = Object.values(lateM[s.token]).some(Boolean);
       if (first) { first = false; resolve(); }
@@ -292,6 +293,9 @@ const weekCount = tok => S.bookings.filter(b => b.token === tok).length;
 const dayCount = (tok, ds) => S.bookings.filter(b => b.token === tok && b.date === ds).length;
 // 今日より前の日は、空き・予約とも一切さわれない（遡って予約を入れない。依頼者指定）
 const isPast = ds => ds < dateStr(today());
+// バスで通っている教習生の日曜日の◯で、バス以外で来られるかをまだ確かめていないもの（自動割り振りでは入れず、手で入れる時は確認する。依頼者指定）
+const sunBus = (s, ds) => s.commute === "bus" && parseDate(ds).getDay() === 0 && !((S.sunOk || {})[s.token] || {})[ds.slice(0, 7)];
+const busConfirm = s => confirm(`${nm(s)}はバスで通っています。\n${CFG.busSundayAsk || ""}\n\n本人に確かめた上で入れますか？`);
 const isFree = (tok, ds, p) => { const d = parseDate(ds); return !!(S.avail[tok] && S.avail[tok][ds.slice(0, 7)] && S.avail[tok][ds.slice(0, 7)].has(slotKey(d.getDate(), p))); };
 const dayPeriods = (tok, ds) => S.bookings.filter(b => b.token === tok && b.date === ds).map(b => b.period);
 const sameSet = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -341,7 +345,8 @@ function evaluate(s, ds, p, viaSub) {
   }
   const sq = seqCheck(s, [{ token: s.token, date: ds, period: p }]);
   if (sq) return { ok: false, reason: sq };
-  return join ? { ok: true, join } : { ok: true };
+  const sb = sunBus(s, ds) || undefined;
+  return join ? { ok: true, join, sunBus: sb } : { ok: true, sunBus: sb };
 }
 const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 
@@ -421,7 +426,7 @@ function evaluatePair(s, ds, a, type = "kiken") {
   if (type === "hwSolo" && dark0 && (dk.hwSoloNo || []).some(set => sameSet(set, ps)))
     return { ok: false, reason: `日没が早い期間は${spanText(a, type)}限の${L}は入れられません` };
   const dark = dark0 && (type === "hwSolo" ? (dk.hwSoloSets || []) : type === "hw3" ? (dk.sets || []) : []).some(set => sameSet(set, ps));
-  return { ok: true, dark, combo, join: joining ? grp.length : 0 };
+  return { ok: true, dark, combo, join: joining ? grp.length : 0, sunBus: sunBus(s, ds) || undefined };
 }
 const typeName = b => b.lessonType ? PT(b.lessonType).label : b.highway ? "高速教習" : "";
 const blabel = b => label(b.date, b.period) + (typeName(b) ? `（${typeName(b)}）` : "");
@@ -723,6 +728,7 @@ async function assignPair(tok, ds, a, type = "kiken", force, gk, quiet) {
   const s = ST(tok);
   const ev = evaluatePair(s, ds, a, type);
   if (!ev.ok) return toast(ev.reason);
+  if (ev.sunBus && !force && !quiet && !gk && !busConfirm(s)) return;
   if (ev.dark && !force) return darkPairSheet(s, ds, a, type);
   if (!gk) { const r = gakkaAsk(s, ds, span(a, type), type); if (r.length) return gakkaSheet(s, r, () => assignPair(tok, ds, a, type, force, true)); }
   const L = PT(type).label;
@@ -743,6 +749,7 @@ async function assign(tok, ds, p, gk, quiet) {
   const s = ST(tok);
   const ev = evaluate(s, ds, p);
   if (ev.ok === false) return toast(ev.reason);
+  if (ev.sunBus && !quiet && !busConfirm(s)) return;
   if (!gk) { const r = gakkaAsk(s, ds, [p]); if (r.length) return gakkaSheet(s, r, () => assign(tok, ds, p, true)); }
   const status = S.confirmed ? "confirmed" : "draft";
   const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status, cancelRequested: false, result: null, stage: s.stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
@@ -818,7 +825,7 @@ function gkAskSheet(i, seq) {
 }
 // 見つけておいた枠がその後ほかの人で埋まっていたら、その人の入れる別の枠（担当の枠）を探して入れる
 async function gkPlace(x) {
-  const s = ST(x.token), ok = (d, q, h) => { const ev = x.ty ? evaluatePair(s, d, q, x.ty) : evaluate(s, d, q, h); return ev.ok !== false && !ev.dark; };
+  const s = ST(x.token), ok = (d, q, h) => { const ev = x.ty ? evaluatePair(s, d, q, x.ty) : evaluate(s, d, q, h); return ev.ok !== false && !ev.dark && !ev.sunBus; };
   let d = x.d, q = x.q, h = x.h;
   if (!ok(d, q, !!h)) {
     h = null;
@@ -861,7 +868,7 @@ async function autoAssign() {
     for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) for (const ty of tries) {
       if (gapNg(s, d, ty ? span(q, ty) : [q]) || (ty ? span(q, ty) : [q]).some(x => held.has(`${d}|${x}`))) continue;
       const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
-      if (ev.ok === false || ev.dark) continue;
+      if (ev.ok === false || ev.dark || ev.sunBus) continue;
       const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
       if (r.length) { gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty }); (ty ? span(q, ty) : [q]).forEach(x => held.add(`${d}|${x}`)); return "skip"; }
       if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
@@ -878,7 +885,7 @@ async function autoAssign() {
     for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
       if (gapNg(s, d, [q])) continue;
       const ev = evaluate(s, d, q, true);
-      if (ev.ok === false || ev.dark) continue;
+      if (ev.ok === false || ev.dark || ev.sunBus) continue;
       const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
       if (!free.length) continue;
       const r = gakkaAsk(s, d, [q]);
