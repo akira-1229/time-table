@@ -3,7 +3,7 @@ import {
   doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where, getDocs, serverTimestamp, onSnapshot
 } from "./backend.js";
 import {
-  CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, md, label, slotKey, esc, toast, sheet, closeSheet,
+  CFG, db, WD, P, ymOf, dateStr, parseDate, daysIn, today, addDays, mondayOf, md, label, slotKey, esc, toast, sheet, closeSheet,
   onOverlayClose, friendlyError, enablePush, pushReasonText, isIOS, isStandalone, listenForeground,
   installButton, firstVisitInstall, sendNow, pushStatusHtml, lessonPlan, lessonItems, noRange, bookingEnd, lessonMin, doneOf, mikiwameOf, kenteiOn, lookSettingsHtml,
   inputDeadlineOf, pastInputDeadline, hwWaitDays, isHwType, trackAccess, greeting, noticeHead, busySheet, noticeRow, mdS, saveNotices, noticeHistoryHtml, progressBarHtml, longDate, expiriesOf, kentei2Soon, KENTEI2_MSG
@@ -65,15 +65,21 @@ function fail(msg) { app.innerHTML = `<div class="err">${esc(msg)}</div>`; }
 
 const nextYm = () => ymOf(MONTHS[1].y, MONTHS[1].m);
 const nextMonthFilled = () => (S.avail[nextYm()] || new Set()).size > 0;
-// 締切は教習生ごと（標準は前の月の deadlineDay 日。指導員が「その月の3日」などに変えられる）。締切を過ぎた月は◯を外せない
+// 締切は教習生ごと（標準は前の月の deadlineDay 日。指導員が「その月の3日」などに変えられる）。◯を外せなくなるのは週ごと（下の weekLocked）
 const dlOf = ym => inputDeadlineOf(S.student, ym);
 const pastDeadline = ym => pastInputDeadline(S.student, ym);
 // 「締切後に変更あり」：今月に締切が来た月（ふつうは来月分）を、締切後に変えた時
 const isLate = ym => pastDeadline(ym) && dlOf(ym).slice(0, 7) === ymOf(MONTHS[0].y, MONTHS[0].m);
 const dlText = ym => { const [, m, d] = dlOf(ym).split("-").map(Number); return `${m}月${d}日`; };
-// この画面を開いてから付けた◯は、締切後でも付け間違いとして外せる
+// この画面を開いてから付けた◯は、外せない週でも付け間違いとして外せる
 const addSlot = (ym, k) => { if (!S.avail[ym].has(k)) { S.avail[ym].add(k); (S.addedNow[ym] = S.addedNow[ym] || new Set()).add(k); } };
-const canRemove = (ym, k) => !CFG.noRemoveAfterDeadline || !pastDeadline(ym) || (S.addedNow[ym] && S.addedNow[ym].has(k));
+// ◯を外せなくなるのは、その日の週の予定を指導員が作り始める日（前の週の月曜日）から。月の締切では止めない（依頼者指定）
+const lockFrom = (ym, d) => { const [y, m] = ym.split("-").map(Number); return addDays(mondayOf(new Date(y, m - 1, d)), -7 * (CFG.removeLockWeeks ?? 1)); };
+const weekLocked = (ym, d) => today() >= lockFrom(ym, d);
+const canRemove = (ym, k) => !CFG.noRemoveAfterDeadline || !weekLocked(ym, +k.split("-")[0]) || (S.addedNow[ym] && S.addedNow[ym].has(k));
+// 今、◯を外せない一番先の週（来週）の月曜日。その週の日曜日までの◯は外せない
+const lockedWeekStart = () => addDays(mondayOf(today()), 7 * (CFG.removeLockWeeks ?? 1));
+const lockRule = () => CFG.noRemoveAfterDeadline ? `◯を外せるのは、その週の前の週の日曜日までです（月曜日から指導員が予定を作り始めるため）。今は<b>${md(dateStr(addDays(lockedWeekStart(), 6)))}まで</b>の◯は外せません。` : "";
 function confirmedAt(ds, p) { return S.bookings.find(b => b.status === "confirmed" && b.date === ds && b.period === p); }
 function unacked() {
   const n = S.student.lastNotifiedAt, a = S.student.ackAt;
@@ -231,14 +237,14 @@ function hwCheck() {
   return true;
 }
 const lockedNote = () => CFG.noRemoveAfterDeadline
-  ? "締切を過ぎているため、◯を付けることはできますが、外すことはできません。都合が悪くなった場合は学園にお電話ください。"
+  ? `◯を付けることはいつでもできます。${lockRule()}都合が悪くなった場合は学園にお電話ください。`
   : "予約が入っていない枠は変更できます。";
 function renderCal() {
   const { y, m } = MONTHS[S.mi]; const ym = ymOf(y, m); const set = S.avail[ym];
   let h = "";
   const filled = set.size > 0, open = !pastDeadline(ym);
   if (stopped()) h += `<div class="banner ${S.student.graduatedOn ? "ok" : "warn"}">${stopMsg()}</div>`;
-  if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。締切の${dlText(ym)}までは何度でも変更できます。${CFG.noRemoveAfterDeadline ? "締切を過ぎると、◯を付けることはできますが、外すことはできなくなります。" : ""}</div>`;
+  if (open && filled) h += `<div class="banner ok">${m}月分は入力済みです。${lockRule()}</div>`;
   else if (open) h += `<div class="banner warn"><b>${m}月分の入力締切は${dlText(ym)}です。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else if (S.mi === 1 && !filled) h += `<div class="banner warn"><b>${m}月分の入力締切（${dlText(ym)}）を過ぎています。</b><br>空いている時間帯をタップして◯を付けてください。</div>`;
   else h += `<div class="banner info">${lockedNote()}タップするとすぐ保存されます。</div>`;
@@ -352,7 +358,7 @@ function dayAllSheet(d) {
 }
 function removeLockedSheet(ym, d, p) {
   const [y, m] = ym.split("-").map(Number);
-  sheet(`<h3>この◯は外せません</h3><p>${label(dateStr(new Date(y, m - 1, d)), p)}<br><span style="color:var(--muted);font-size:13px">締切を過ぎているため、すでに付いている◯は外せません（指導員が予約を組んでいる途中のためです）。都合が悪くなった場合は学園にお電話ください。</span></p>
+  sheet(`<h3>この◯は外せません</h3><p>${label(dateStr(new Date(y, m - 1, d)), p)}<br><span style="color:var(--muted);font-size:13px">この週の予定は、${md(dateStr(lockFrom(ym, d)))}から指導員が作り始めているため、◯は外せません。都合が悪くなった場合は学園にお電話ください。</span></p>
     <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
 }
 
@@ -394,12 +400,12 @@ document.addEventListener("click", async e => {
     if (!document.getElementById("da_chk")?.checked) return;
     const mi = +t.dataset.mi, d = +t.dataset.d, { y, m } = MONTHS[mi], ym = ymOf(y, m), st = dayState(ym, y, m, d);
     if (t.dataset.on === "1") {
-      // 締切を過ぎた月は、この画面で付けた◯しか外せない
+      // 予定を作り始めた週は、この画面で付けた◯しか外せない
       const ng = st.free.filter(p => S.avail[ym].has(slotKey(d, p)) && !canRemove(ym, slotKey(d, p)));
       st.free.filter(p => !ng.includes(p)).forEach(p => S.avail[ym].delete(slotKey(d, p)));
       render(); scheduleSave(ym);
       if (!ng.length) { closeSheet(); toast(`${m}月${d}日の◯を全て外しました`); }
-      else sheet(`<h3>外せない◯があります</h3><p>${m}月${d}日の <b>${ng.join("・")}限</b> は、締切を過ぎているため外せません（指導員が予約を組んでいる途中のためです）。ほかの◯は外しました。<br><span style="color:var(--muted);font-size:13px">都合が悪くなった場合は学園にお電話ください。</span></p>
+      else sheet(`<h3>外せない◯があります</h3><p>${m}月${d}日の <b>${ng.join("・")}限</b> は、指導員が予定を作り始めている週のため外せません。ほかの◯は外しました。<br><span style="color:var(--muted);font-size:13px">都合が悪くなった場合は学園にお電話ください。</span></p>
         <div class="list"><a class="btn accent full center" style="text-decoration:none;display:block;line-height:22px" href="tel:${esc(CFG.schoolTel)}">学園に電話する</a><button class="btn full" data-act="close">閉じる</button></div>`);
     } else {
       if (stopped()) return stopSheet();
