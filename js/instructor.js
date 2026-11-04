@@ -339,6 +339,7 @@ function evaluate(s, ds, p, viaSub) {
     const ps = [...dayPeriods(s.token, ds), p].sort((a, b) => a - b);
     for (let i = 0; i + 2 < ps.length; i++) {
       const tri = ps.slice(i, i + 3);
+      if (tripleOk(s, ds, tri, [{ period: p, type: "" }])) continue;
       if (linkedP(tri[0], tri[1]) && linkedP(tri[1], tri[2]))
         return { ok: false, reason: `${S.bookings.some(b => b.token === s.token && b.date === ds && b.pairId && tri.includes(b.period)) ? "ほかの予約と合わせて" : ""}連続3時限（${tri.join("・")}限）になるため入れられません` };
     }
@@ -347,6 +348,18 @@ function evaluate(s, ds, p, viaSub) {
   if (sq) return { ok: false, reason: sq };
   const sb = sunBus(s, ds) || undefined;
   return join ? { ok: true, join, sunBus: sb } : { ok: true, sunBus: sb };
+}
+// 連続3時限の例外（config の tripleCombos）：例 第2段階の5限に11時限目（通常）、6・7限に危険予測（12時限目）。
+// tri＝並んだ3つの時限、add＝これから入れる予約 [{ period, type }]
+function tripleOk(s, ds, tri, add = []) {
+  return (CFG.tripleCombos || []).some(c => {
+    if ((c.stage && c.stage !== s.stage) || !sameSet(tri, [c.normal, c.kiken, c.kiken + 1])) return false;
+    const at = q => add.find(x => x.period === q) || S.bookings.find(b => b.token === s.token && b.date === ds && b.period === q && !b.subUid);
+    const ty = x => x && (x.lessonType || x.type || "");
+    const n = at(c.normal), k1 = at(c.kiken), k2 = at(c.kiken + 1);
+    if (!n || ty(n) || ty(k1) !== "kiken" || ty(k2) !== "kiken") return false;
+    return (n.id ? (itemOf(n) || {}).no : lessonNoAt(s, ds, c.normal)) === c.no;
+  });
 }
 const canBook = (s, ds, p) => evaluate(s, ds, p).ok !== false;
 
@@ -416,6 +429,7 @@ function evaluatePair(s, ds, a, type = "kiken") {
         const w = sorted.slice(i, i + 3);
         if (!(linkedP(w[0].period, w[1].period) && linkedP(w[1].period, w[2].period))) continue;
         if (type === "hw3" && w.every(x => x.g === "new")) continue;   // 高速教習（3時限）そのものは連続3時限でよい
+        if (tripleOk(s, ds, w.map(x => x.period), ps.map(q => ({ period: q, type })))) continue;
         return { ok: false, reason: `ほかの予約と合わせて連続${type === "hw3" ? "4" : "3"}時限（${w.map(x => x.period).join("・")}限）になります` };
       }
     }
