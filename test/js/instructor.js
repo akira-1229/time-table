@@ -260,9 +260,9 @@ function multiGroup(ds, p) {
   if (!list.length) return [];
   return list.every(b => { const s = ST(b.token), it = !b.lessonType && s && itemOf(b); return it && isMultiNo(s, it.no); }) ? list.map(b => b.token) : null;
 }
-// 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は2人まで（config の capacity。依頼者指定）
+// 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は3人まで（config の capacity。依頼者指定）
 const SHARED = ["hw3", "kiken"];
-const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 2 : 1;
+const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 3 : 1;
 // a限から始まる、一緒に受けられる教習（高速教習3時限・危険予測2時限）の組に入っている教習生
 // （その時限がその種類の同じ組の予約だけの時）。ほかの予約が混じっていれば null
 function groupAt(ds, a, type) {
