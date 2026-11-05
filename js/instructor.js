@@ -1091,25 +1091,48 @@ async function unmarkResult(b) {
   render(); toast("チェックを取り消しました");
 }
 
+// 確定は教習生1人ずつ、さらに小分けにして書き込む（Firestore のルールは、1回のまとめ書き込みで確かめられる回数が20回までのため。
+// 担当が十数人を超えると、まとめて書くと「権限がありません」になっていた）。全員うまくいったら、最後に週の確定記録を書く
 async function confirmWeek() {
   const drafts = S.bookings.filter(b => b.status === "draft");
   const byStudent = {};
   drafts.forEach(b => { (byStudent[b.token] = byStudent[b.token] || []).push(b); });
-  const batch = writeBatch(db);
-  drafts.forEach(b => batch.update(doc(db, "students", b.token, "bookings", b.id), { status: "confirmed", updatedAt: serverTimestamp() }));
-  batch.set(doc(db, "weeks", `${S.uid}_${wid()}`), { instructorUid: S.uid, weekId: wid(), confirmedAt: serverTimestamp() });
-  Object.entries(byStudent).forEach(([tok, list]) => {
-    list.sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);
+  const toks = Object.keys(byStudent), done = [], failed = [];
+  sheet(`<h3>確定して通知しています…</h3><p style="font-size:13px;color:var(--muted)">${toks.length}人分。少しお待ちください。</p>`);
+  const one = async tok => {
+    const list = byStudent[tok].sort((a, b) => a.date.localeCompare(b.date) || a.period - b.period);
     const body = list.slice(0, 3).map(blabel).join("、") + (list.length > 3 ? ` ほか${list.length - 3}件` : "");
-    batch.set(doc(collection(db, "outbox")), outboxData(tok, "weekly", `${md(days()[0])}からの週の予約が決まりました`, body));
-    batch.update(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
-  });
-  await batch.commit();
-  sendNow();
-  drafts.forEach(b => b.status = "confirmed");
-  S.pending.forEach(b => { if (drafts.some(d => d.id === b.id)) b.status = "confirmed"; });
-  Object.keys(byStudent).forEach(tok => { const s = ST(tok); if (s) s.lastNotifiedAt = Timestamp.now(); });
-  S.confirmed = true; render(); toast(`${Object.keys(byStudent).length}人に通知しました`);
+    try {
+      // 予約は4件ずつ（1件につきルールの確認が3回かかるため、1回の書き込みで20回を超えないように）。通知は最後に
+      for (let i = 0; i < list.length; i += 4) {
+        const batch = writeBatch(db);
+        list.slice(i, i + 4).forEach(b => batch.update(doc(db, "students", tok, "bookings", b.id), { status: "confirmed", updatedAt: serverTimestamp() }));
+        await batch.commit();
+        list.slice(i, i + 4).forEach(b => b.status = "confirmed");
+      }
+      const nb = writeBatch(db);
+      nb.set(doc(collection(db, "outbox")), outboxData(tok, "weekly", `${md(days()[0])}からの週の予約が決まりました`, body));
+      nb.update(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
+      await nb.commit();
+      list.forEach(b => b.status = "confirmed");
+      S.pending.forEach(b => { if (list.some(d => d.id === b.id)) b.status = "confirmed"; });
+      const s = ST(tok); if (s) s.lastNotifiedAt = Timestamp.now();
+      done.push(tok);
+    } catch (e) { failed.push([tok, e]); }
+  };
+  for (let i = 0; i < toks.length; i += 5) await Promise.all(toks.slice(i, i + 5).map(one));   // 5人ずつ
+  if (!failed.length) {
+    try { await setDoc(doc(db, "weeks", `${S.uid}_${wid()}`), { instructorUid: S.uid, weekId: wid(), confirmedAt: serverTimestamp() }); S.confirmed = true; }
+    catch (e) { failed.push(["", e]); }
+  }
+  if (done.length) sendNow();
+  closeSheet(); render();
+  if (!failed.length) return toast(`${done.length}人に通知しました`);
+  sheet(`<h3>確定できなかった教習生がいます</h3>
+    <p>${done.length}人には通知しました。次の${failed.filter(([t]) => t).length || ""}人は確定できませんでした。</p>
+    <div class="banner warn">${failed.map(([t, e]) => `${t ? esc(nm(ST(t)) || t) : "週の確定記録"}：${esc(friendlyError(e))}`).join("<br>")}</div>
+    <p style="font-size:13px;color:var(--muted)">もう一度「この週の予約を確定して通知」を押すと、残りの人だけ確定します（通知済みの人に二重には届きません）。続く時は事務所に連絡してください。</p>
+    <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }
 
 /* ---------- 画面の切り替え（予約の割り当て／教習生の管理） ---------- */
