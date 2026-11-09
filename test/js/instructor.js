@@ -470,14 +470,19 @@ function balanceHtml() {
   return h + `</div></details>`;
 }
 
-// 予定表の右側（スマホはマス目の下）に、教習生ごとのこの週の回数を一覧で出す（「山田さん（0012）　3回」。依頼者指定）。
-// 少ない人から順。0回は赤。押すとその人を選んで割り当てられる
+// 予定表の右側（スマホはマス目の下）に、教習生ごとのこの週の回数を一覧で出す（「山田さん（0012）　3回」と横棒。依頼者指定）。
+// 少ない人から順。1回も入っていない人は赤く点滅させる（自動割り振りで入れられなかった人が一目で分かるように。依頼者指定 2026-11-09）。
+// みきわめに合格して検定を待っている人は入れないので「検定待ち」（点滅しない）。押すとその人を選んで割り当てられる
 function countListHtml() {
   if (!S.students.length) return "";
-  const rows = S.students.map(s => ({ s, n: weekCount(s.token), d: S.bookings.filter(b => b.token === s.token && b.status === "draft").length }))
-    .sort((a, b) => a.n - b.n || String(a.s.studentNo || "").localeCompare(String(b.s.studentNo || "")));
-  return `<div class="cnt"><div class="cnt-h">今週の回数<small>（${rows.length}人・未確定を含む）</small></div>${rows.map(r =>
-    `<button class="cnt-r${r.n === 0 ? " zero" : ""}${S.pick === r.s.token ? " on" : ""}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(nm(r.s))}</span><b>${r.n}回</b></button>`).join("")}</div>`;
+  const rows = S.students.map(s => ({ s, n: weekCount(s.token), wait: !!(s[`mikiwame${s.stage}`] || {}).passed, free: freeCount(s) }))
+    .sort((a, b) => (a.wait - b.wait) || a.n - b.n || String(a.s.studentNo || "").localeCompare(String(b.s.studentNo || "")));
+  const zero = rows.filter(r => !r.n && !r.wait).length, top = Math.max(1, ...rows.map(r => r.n));
+  return `<div class="cnt"><div class="cnt-h">今週の回数<small>（${rows.length}人・未確定を含む）</small></div>
+    ${zero ? `<div class="cnt-alert">1回も入っていない人：<b>${zero}人</b></div>` : `<div class="cnt-ok">全員1回以上入っています</div>`}${rows.map(r => {
+    const z = !r.n && !r.wait;
+    return `<button class="cnt-r${z ? " zero blink" : ""}${r.wait ? " wait" : ""}${S.pick === r.s.token ? " on" : ""}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(nm(r.s))}${z ? `<small>${r.free ? "入れる枠なし" : "◯（空き時間）なし"}</small>` : ""}</span><span class="cb"><i style="width:${Math.round(r.n / top * 100)}%"></i></span><b>${r.wait ? "検定待ち" : `${r.n}回`}</b></button>`;
+  }).join("")}</div>`;
 }
 
 /* ---------- 画面 ---------- */
@@ -780,8 +785,8 @@ async function assign(tok, ds, p, gk, quiet) {
 //  ・高校生（教習生番号 3001〜3999）は優先：順番を lead 時限分だけ先にし、1週の上限も extraMax だけ多い（依頼者指定。不公平にならない程度）
 //  ・危険予測・高速教習は番の人だけ（高速教習は3時限→単独高速の順。一緒に入れる組があれば一緒に）
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
-//  ・どんなに空きが少なくても、全員が週1回は乗れるようにする（最低ライン）。基本は担当制なので、ほかの指導員への依頼（helpersOf・assignVia）は
-//    担当の枠がどうしても無くて週1回に届かない人だけに使う（乱用しない。依頼者指定）
+//  ・どんなに空きが少なくても、全員が週1回は乗れるようにする（最低ライン。入れる枠が少ない人から先に）。
+//    ほかの指導員への依頼として自動で入れる仕組みは廃止（2026-11-09 依頼者指定）。入らなかった人は「今週の回数」で赤く点滅させる
 // 自動で入れる枠の順番。ふつうは日時の早い順。みきわめ不合格で検定日（予定）が決まっている人は、
 // 検定日の前日の1〜7限を一番に、あとは検定日に近い日から（検定日当日以降には入れない。依頼者指定）
 function slotOrder(s, mk) {
@@ -793,31 +798,6 @@ function slotOrder(s, mk) {
 }
 // 高校生か（教習生番号が config の highSchool の範囲。依頼者指定：3001〜3999）
 const isHighSchool = s => { const h = (CFG.autoAssign || {}).highSchool, n = +s.studentNo; return !!h && n >= h.from && n <= h.to; };
-// 担当の枠がどうしても無くて週1回に届かない人だけ、その時間に空いているほかの指導員への依頼として入れる（通常の教習だけ。依頼者指定）。
-// 相手の✕・自分の予約・頼まれた教習のある時間は使わない。1人の指導員に頼むのは1週 autoAssign.delegateMax 時限まで、少ない人から
-async function helpersOf() {
-  const ins = (await getDocs(collection(db, "instructors"))).docs.map(d => ({ uid: d.id, ...d.data() })).filter(i => i.uid !== S.uid);
-  const yms = [...new Set(days().map(d => d.slice(0, 7)))];
-  for (const i of ins) {
-    i.busy = new Set(); i.n = 0;
-    for (const ym of yms) {
-      const od = await getDoc(doc(db, "offs", `${i.uid}_${ym}`));
-      (od.exists() ? od.data().slots || [] : []).forEach(k => { const [dd, q] = k.split("-"); i.busy.add(`${ym}-${String(dd).padStart(2, "0")}|${q}`); });
-    }
-    const own = await getDocs(query(collectionGroup(db, "bookings"), where("instructorUid", "==", i.uid), where("weekId", "==", wid())));
-    own.docs.map(d => d.data()).filter(b => b.status !== "cancelled" && !b.subUid).forEach(b => i.busy.add(`${b.date}|${b.period}`));
-    const sub = await getDocs(query(collectionGroup(db, "bookings"), where("subUid", "==", i.uid), where("weekId", "==", wid())));
-    sub.docs.map(d => d.data()).filter(b => b.status !== "cancelled").forEach(b => { i.busy.add(`${b.date}|${b.period}`); if (b.subFrom === S.uid) i.n++; });
-  }
-  return ins;
-}
-async function assignVia(s, ds, p, h) {
-  const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status: "draft", cancelRequested: false, result: null, stage: s.stage,
-    subUid: h.uid, subName: h.name, subFrom: S.uid, subFromName: S.me.name, subStudent: nm(s), createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
-  const ref = await addDoc(collection(db, "students", s.token, "bookings"), data);
-  S.bookings.push({ id: ref.id, token: s.token, ...data }); S.pending.push(S.bookings.at(-1));
-  if (h.busy) h.busy.add(`${ds}|${p}`); h.n = (h.n || 0) + 1;
-}
 // 自動割り振りで、学科の確認が要るため入れなかった教習生（S.gkList）を、一覧から1人ずつ確認して入れる（依頼者指定）。
 // 「はい」なら自動割り振りで見つけておいた枠にそのまま入れる。「いいえ」なら入れない
 const gkNow = () => (S.gkList || []).filter(x => x.week === wid() && ST(x.token));
@@ -839,23 +819,21 @@ function gkAskSheet(i, seq) {
 }
 // 見つけておいた枠がその後ほかの人で埋まっていたら、その人の入れる別の枠（担当の枠）を探して入れる
 async function gkPlace(x) {
-  const s = ST(x.token), ok = (d, q, h) => { const ev = x.ty ? evaluatePair(s, d, q, x.ty) : evaluate(s, d, q, h); return ev.ok !== false && !ev.dark && !ev.sunBus; };
-  let d = x.d, q = x.q, h = x.h;
-  if (!ok(d, q, !!h)) {
-    h = null;
-    const alt = slotOrder(s, s[`mikiwame${s.stage}`]).find(([dd, qq]) => ok(dd, qq, false));
+  const s = ST(x.token), ok = (d, q) => { const ev = x.ty ? evaluatePair(s, d, q, x.ty) : evaluate(s, d, q); return ev.ok !== false && !ev.dark && !ev.sunBus; };
+  let d = x.d, q = x.q;
+  if (!ok(d, q)) {
+    const alt = slotOrder(s, s[`mikiwame${s.stage}`]).find(([dd, qq]) => ok(dd, qq));
     if (!alt) return toast(`${nm(s)}：入れられる枠がもうありません（手で入れてください）`);
     [d, q] = alt;
   }
   if (x.ty) await assignPair(x.token, d, q, x.ty, false, true, true);
-  else if (h) await assignVia(s, d, q, h);
   else await assign(x.token, d, q, true, true);
   toast(`${label(d, q)} に${nm(s)}を入れました`);
 }
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
   const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, minW = AA.minPerWeek ?? 1, gk = new Map(), ng = new Set();
-  let made = 0, viaN = 0, helpers = null, hErr = "";
+  let made = 0;
   const held = new Set();   // 学科の確認待ちの人のために取っておく枠（確認した時にそのまま入れられるように）
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
@@ -891,36 +869,17 @@ async function autoAssign() {
     return "";
   };
   const ownSlots = s => days().reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(q => canBook(s, d, q)).length, 0);
-  // 担当の枠がどうしても無い時だけ、空いているほかの指導員に1つ依頼する（通常の教習だけ）
-  const viaOne = async s => {
-    if (AA.delegate === false) return "";
-    if (!helpers) { try { helpers = await helpersOf(); } catch (e) { helpers = []; noteIndex(e); hErr = friendlyError(e); } }
-    const cap = AA.delegateMax || 6;
-    for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) {
-      if (gapNg(s, d, [q])) continue;
-      const ev = evaluate(s, d, q, true);
-      if (ev.ok === false || ev.dark || ev.sunBus) continue;
-      const free = helpers.filter(h => h.n < cap && !h.busy.has(`${d}|${q}`)).sort((a, b) => a.n - b.n);
-      if (!free.length) continue;
-      const r = gakkaAsk(s, d, [q]);
-      if (r.length) { gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty: "", h: { uid: free[0].uid, name: free[0].name } }); return "skip"; }
-      await assignVia(s, d, q, free[0]); return "ok";
-    }
-    return "";
-  };
   try {
     // 1回目：どんなに空きが少なくても、全員が週 minPerWeek 回は乗れるように（最低ライン。依頼者指定）。
-    // 入れる枠が少ない人から先に、まず担当の枠へ。担当の枠がどうしても無い人だけ、ほかの指導員に依頼する
+    // 入れる枠が少ない人から先に（ほかの指導員への依頼はしない。依頼者指定）
     for (let k = 0; k < minW; k++) {
       const need = S.students.filter(s => weekCount(s.token) <= k && want(s)).sort((a, b) => ownSlots(a) - ownSlots(b));
       for (const s of need) {
         const tries = want(s); if (!tries) continue;
-        let r = await ownOne(s, tries);
-        if (!r && tries[0] === "") { r = await viaOne(s); if (r === "ok") viaN++; }
-        if (r === "ok") made++;
+        if (await ownOne(s, tries) === "ok") made++;
       }
     }
-    // 2回目：担当の枠に、予約の少ない人から1人ずつ交代で入れる（基本は担当制。ほかの指導員への依頼はしない。依頼者指定）
+    // 2回目：予約の少ない人から1人ずつ交代で入れる
     for (let round = 0; round < 80; round++) {
       let progress = false;
       for (const s of order()) {
@@ -931,13 +890,10 @@ async function autoAssign() {
     }
   } finally { closeSheet(); S.gkList = [...gk].map(([token, v]) => ({ token, week: wid(), ...v })); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
-  const used = (helpers || []).filter(h => h.n);
   sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
-    ${viaN ? `<div class="banner info"><b>そのうち${viaN}件は、ほかの指導員への依頼として入れました</b>${used.map(h => `<br>${esc(h.name)} 指導員：${h.n}時限`).join("")}<br><span style="font-size:12px">マス目には「名字→依頼先」で出ます。依頼先を変える・やめる時は、そのマスを押してください。</span></div>` : ""}
-    ${hErr ? `<div class="banner warn">ほかの指導員の空きを調べられませんでした（${esc(hErr)}）。</div>${indexBanner()}` : ""}
     ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため、まだ入れていません（${gk.size}人）</b>${[...gk].map(([t, v]) => `<br>${esc(nm(ST(t)))}：${v.text}`).join("")}</div><button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gk.size}人）を確認する</button>` : ""}
     ${ng.size ? `<div class="banner warn"><b>教習の順番がずれているため入れていません</b>${[...ng].map(t => `<br>${esc(nm(ST(t)))}`).join("")}</div>` : ""}
-    ${none.length ? `<div class="banner info"><b>この週に1つも入らなかった教習生</b>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
+    ${none.length ? `<div class="banner warn"><b>この週に1つも入らなかった教習生（${none.length}人）</b><br><span style="font-size:12px">予定表の右の「今週の回数」で赤く点滅しています。</span>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }
 // 危険予測・高速教習の組（2時限・3時限）を全部集める。表示中の週に無い予約（別の週のキャンセル希望など）もあるので、DBから読む
