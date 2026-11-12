@@ -262,7 +262,7 @@ function multiGroup(ds, p) {
 }
 // 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は3人まで（config の capacity。依頼者指定）
 const SHARED = ["hw3", "kiken"];
-const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 3 : 1;
+const CAP = type => type === "hw3" ? (CFG.hw3 || {}).capacity || 3 : type === "kiken" ? (CFG.kiken || {}).capacity || 3 : type === "multi" ? (CFG.multi || {}).capacity || 3 : 1;
 // a限から始まる、一緒に受けられる教習（高速教習3時限・危険予測2時限）の組に入っている教習生
 // （その時限がその種類の同じ組の予約だけの時）。ほかの予約が混じっていれば null
 function groupAt(ds, a, type) {
@@ -835,6 +835,7 @@ async function autoAssign() {
   const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, minW = AA.minPerWeek ?? 1, gk = new Map(), ng = new Set();
   let made = 0;
   const held = new Set();   // 学科の確認待ちの人のために取っておく枠（確認した時にそのまま入れられるように）
+  const heldShared = new Map();   // 取っておいた枠のうち、一緒に受けられる教習（高速教習3時限など）の組：「日|始まりの時限|種類」→ 人数
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
   const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
@@ -856,13 +857,41 @@ async function autoAssign() {
     return have.length > 0 && Math.min(...ps.flatMap(q => have.map(e => Math.abs(q - e)))) > (AA.maxGap ?? 2);
   };
   // 担当（自分）の枠に1つ入れる。"ok"＝入れた、"skip"＝学科の確認が要るので入れない、""＝入る枠がない
+  // 何人かで一緒に受けられる教習の番か（第2段階：11時限目＝複数教習、12時限目＝危険予測、13時限目〜＝高速教習3時限）
+  const sharedKind = (s, tries) => !tries ? "" : tries.includes("kiken") ? "kiken" : tries.includes("hw3") ? "hw"
+    : tries[0] === "" && isMultiNo(s, lessonPlan(s, pendingOf(s)).total + 1) ? "multi" : "";
+  // 一緒に受けられる教習は、できるだけ何人かでまとめる（効率よく進めるため。依頼者指定 2026-11-09）：
+  // ①すでに同じ教習が入っている時限に一緒に入れる（人数が多い組から埋める）→ ②同じ番のほかの人も空いている時限（空いている人が多いほど先）→ ③日時の早い順
+  const slotsFor = (s, tries) => {
+    const kind = sharedKind(s, tries), list = [];
+    const peers = kind ? S.students.filter(o => o !== s && sharedKind(o, want(o)) === kind) : [];
+    slotOrder(s, s[`mikiwame${s.stage}`]).forEach(([d, q], i) => tries.forEach((ty, k) => {
+      const ps = ty ? span(q, ty) : [q];
+      const shareable = kind && (ty === "kiken" || ty === "hw3" || (kind === "multi" && !ty));
+      list.push({ d, q, ty, ps, i, k, shareable, free: shareable ? peers.filter(o => ps.every(x => isFree(o.token, d, x))).length : 0 });
+    }));
+    return kind ? list.sort((a, b) => b.shareable - a.shareable || b.free - a.free || a.i - b.i || a.k - b.k) : list;
+  };
   const ownOne = async (s, tries) => {
-    for (const [d, q] of slotOrder(s, s[`mikiwame${s.stage}`])) for (const ty of tries) {
-      if (gapNg(s, d, ty ? span(q, ty) : [q]) || (ty ? span(q, ty) : [q]).some(x => held.has(`${d}|${x}`))) continue;
+    const ok = [];
+    for (const c of slotsFor(s, tries)) {
+      const { d, q, ty, ps } = c;
+      const hk = `${d}|${q}|${ty}`, hn = c.shareable ? heldShared.get(hk) || 0 : 0;
+      if (gapNg(s, d, ps) || (ps.some(x => held.has(`${d}|${x}`)) && !(hn && hn < CAP(ty || "multi")))) continue;
       const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
       if (ev.ok === false || ev.dark || ev.sunBus) continue;
-      const r = gakkaAsk(s, d, ty ? span(q, ty) : [q], ty);
-      if (r.length) { gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty }); (ty ? span(q, ty) : [q]).forEach(x => held.add(`${d}|${x}`)); return "skip"; }
+      ok.push({ ...c, join: (ev.join || 0) + hn });
+      if (!sharedKind(s, tries)) break;   // ふつうの教習は、日時の早い順に最初の1つ
+    }
+    // 一緒に入れる組があれば、人数の多い組から（3人まで）
+    ok.sort((a, b) => (b.join > 0) - (a.join > 0) || b.join - a.join);
+    for (const { d, q, ty, ps, shareable } of ok.slice(0, 1)) {
+      const r = gakkaAsk(s, d, ps, ty);
+      if (r.length) {
+        gk.set(s.token, { text: r.map(x => `${x.no}時限目`).join("・"), d, q, ty }); ps.forEach(x => held.add(`${d}|${x}`));
+        if (shareable) heldShared.set(`${d}|${q}|${ty}`, (heldShared.get(`${d}|${q}|${ty}`) || 0) + 1);   // 同じ番のほかの人も、この枠に一緒に取っておける
+        return "skip";
+      }
       if (ty) await assignPair(s.token, d, q, ty, false, true, true); else await assign(s.token, d, q, true, true);
       return "ok";
     }
