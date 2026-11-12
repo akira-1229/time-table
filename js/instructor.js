@@ -475,13 +475,14 @@ function balanceHtml() {
 // みきわめに合格して検定を待っている人は入れないので「検定待ち」（点滅しない）。押すとその人を選んで割り当てられる
 function countListHtml() {
   if (!S.students.length) return "";
-  const rows = S.students.map(s => ({ s, n: weekCount(s.token), wait: !!(s[`mikiwame${s.stage}`] || {}).passed, free: freeCount(s) }))
+  const gkw = new Set(gkNow().map(x => x.token));   // 学科の確認待ちで枠を取ってある人（確認すれば入る）
+  const rows = S.students.map(s => ({ s, n: weekCount(s.token), wait: !!(s[`mikiwame${s.stage}`] || {}).passed, gk: gkw.has(s.token), free: freeCount(s) }))
     .sort((a, b) => (a.wait - b.wait) || a.n - b.n || String(a.s.studentNo || "").localeCompare(String(b.s.studentNo || "")));
-  const zero = rows.filter(r => !r.n && !r.wait).length, top = Math.max(1, ...rows.map(r => r.n));
+  const zero = rows.filter(r => !r.n && !r.wait && !r.gk).length, top = Math.max(1, ...rows.map(r => r.n));
   return `<div class="cnt"><div class="cnt-h">今週の回数<small>（${rows.length}人・未確定を含む）</small></div>
     ${zero ? `<div class="cnt-alert">1回も入っていない人：<b>${zero}人</b></div>` : `<div class="cnt-ok">全員1回以上入っています</div>`}${rows.map(r => {
-    const z = !r.n && !r.wait;
-    return `<button class="cnt-r${z ? " zero blink" : ""}${r.wait ? " wait" : ""}${S.pick === r.s.token ? " on" : ""}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(nm(r.s))}${z ? `<small>${r.free ? "入れる枠なし" : "◯（空き時間）なし"}</small>` : ""}</span><span class="cb"><i style="width:${Math.round(r.n / top * 100)}%"></i></span><b>${r.wait ? "検定待ち" : `${r.n}回`}</b></button>`;
+    const z = !r.n && !r.wait && !r.gk;
+    return `<button class="cnt-r${z ? " zero blink" : ""}${r.wait ? " wait" : ""}${S.pick === r.s.token ? " on" : ""}" data-act="balPick" data-s="${r.s.token}"><span class="nm">${esc(nm(r.s))}${z ? `<small>${r.free ? "入れる枠なし" : "◯（空き時間）なし"}</small>` : ""}</span><span class="cb"><i style="width:${Math.round(r.n / top * 100)}%"></i></span><b>${r.wait ? "検定待ち" : `${r.n}回`}</b>${r.gk ? `<small class="cnt-gk">学科の確認待ち</small>` : ""}</button>`;
   }).join("")}</div>`;
 }
 
@@ -885,6 +886,9 @@ async function autoAssign() {
     }
     // 一緒に入れる組があれば、人数の多い組から（3人まで）
     ok.sort((a, b) => (b.join > 0) - (a.join > 0) || b.join - a.join);
+    // 1人だけの危険予測・高速教習（単独高速も）は極力作らない（依頼者指定 2026-11-12）：一緒に入れる組も、一緒に入れそうな人もいない時は後回しにして、
+    // ほかの人を入れ終わってから、もう一度（その時も相手がいなければ1人で入れる）
+    if (!allowSolo && !firstRound && sharedKind(s, tries) && sharedKind(s, tries) !== "multi" && ok.length && !ok[0].join && !ok[0].free) { later.add(s.token); return ""; }
     for (const { d, q, ty, ps, shareable } of ok.slice(0, 1)) {
       const r = gakkaAsk(s, d, ps, ty);
       if (r.length) {
@@ -898,9 +902,15 @@ async function autoAssign() {
     return "";
   };
   const ownSlots = s => days().reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(q => canBook(s, d, q)).length, 0);
+  // 「全員週1回」の1回目は、1人になっても入れる（空き時間が少ない人の枠をほかの人に取られないように）。後回しにするのは2回目（交代で入れる）だけ
+  let allowSolo = false, firstRound = false; const later = new Set();
   try {
+   for (const pass of [1, 2]) {
+    allowSolo = pass === 2;   // 2回目は、後回しにした人を1人でも入れる
+    if (pass === 2 && !later.size) break;
     // 1回目：どんなに空きが少なくても、全員が週 minPerWeek 回は乗れるように（最低ライン。依頼者指定）。
     // 入れる枠が少ない人から先に（ほかの指導員への依頼はしない。依頼者指定）
+    firstRound = true;
     for (let k = 0; k < minW; k++) {
       const need = S.students.filter(s => weekCount(s.token) <= k && want(s)).sort((a, b) => ownSlots(a) - ownSlots(b));
       for (const s of need) {
@@ -908,6 +918,7 @@ async function autoAssign() {
         if (await ownOne(s, tries) === "ok") made++;
       }
     }
+    firstRound = false;
     // 2回目：予約の少ない人から1人ずつ交代で入れる
     for (let round = 0; round < 80; round++) {
       let progress = false;
@@ -917,11 +928,16 @@ async function autoAssign() {
       }
       if (!progress) break;
     }
+   }
   } finally { closeSheet(); S.gkList = [...gk].map(([token, v]) => ({ token, week: wid(), ...v })); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
+  // 1人だけになった危険予測・高速教習（一緒に入れる人がいなかった）
+  const solo = [...new Set(S.bookings.filter(b => b.status === "draft" && ["kiken", "hw3", "hwSolo"].includes(b.lessonType)).map(b => `${b.date}|${Math.min(...S.bookings.filter(x => x.pairId === b.pairId && x.token === b.token).map(x => x.period))}|${b.lessonType}`))]
+    .filter(k => { const [d, a, ty] = k.split("|"); return ty === "hwSolo" || (groupAt(d, +a, ty) || []).length === 1; });
   sheet(`<h3>自動で割り振りました</h3><p style="font-size:16px"><b>${made}件</b>を未確定で入れました。マス目を見て、直したいところは直してから「この週の予約を確定して通知」を押してください（確定するまで教習生には通知されません）。</p>
     ${gk.size ? `<div class="banner warn"><b>学科の確認が要るため、まだ入れていません（${gk.size}人）</b>${[...gk].map(([t, v]) => `<br>${esc(nm(ST(t)))}：${v.text}`).join("")}</div><button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gk.size}人）を確認する</button>` : ""}
     ${ng.size ? `<div class="banner warn"><b>教習の順番がずれているため入れていません</b>${[...ng].map(t => `<br>${esc(nm(ST(t)))}`).join("")}</div>` : ""}
+    ${solo.length ? `<div class="banner info"><b>1人で受ける危険予測・高速教習が${solo.length}件あります</b>（同じ番で一緒に入れる人がいませんでした）${solo.map(k => { const [d, a, ty] = k.split("|"); const b = S.bookings.find(x => x.date === d && x.period === +a && x.lessonType === ty); return `<br>${label(d, +a)}　${PT(ty).label}　${esc(nm(ST(b.token)))}`; }).join("")}</div>` : ""}
     ${none.length ? `<div class="banner warn"><b>この週に1つも入らなかった教習生（${none.length}人）</b><br><span style="font-size:12px">予定表の右の「今週の回数」で赤く点滅しています。</span>${none.map(s => `<br>${esc(nm(s))}（${freeCount(s) ? `空き${freeCount(s)}枠` : "空き時間なし"}）`).join("")}</div>` : ""}
     <div class="list"><button class="btn primary full" data-act="close">OK</button></div>`);
 }

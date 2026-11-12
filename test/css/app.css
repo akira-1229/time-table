@@ -276,6 +276,7 @@ body.pc #off .cell{width:100%;height:48px;font-size:16px}
 .cnt-r.zero{background:var(--lv3-soft);box-shadow:0 0 0 2px var(--lv3)}.cnt-r.zero b{color:var(--lv3)}
 .cnt-r.zero.blink{animation:k2blink 1.4s ease-in-out infinite}
 .cnt-r.wait b{color:var(--muted);font-weight:400;font-size:11px}
+.cnt-r .cnt-gk{grid-column:1/-1;font-size:10.5px;color:var(--orange);font-weight:700}
 .cnt-alert{background:var(--lv3-soft);color:var(--lv3);border-radius:6px;padding:5px 8px;font-size:12px;font-weight:700;margin-bottom:4px}
 .cnt-ok{background:var(--green-soft);color:var(--green);border-radius:6px;padding:5px 8px;font-size:12px;font-weight:700;margin-bottom:4px}
 @media (prefers-reduced-motion:reduce){.cnt-r.zero.blink{animation:none}}
