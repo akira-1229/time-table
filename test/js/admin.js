@@ -410,24 +410,25 @@ async function deleteStudent(tok) {
 }
 
 // 教習生がアプリを使い始める前に、指導員が空き時間（◯）を代わりに入れる（依頼者指定）。
-// 入れられるのは教習生を登録した日から1ヶ月だけ（過ぎた日は押せない。1ヶ月を過ぎたらボタンも押せない）。押すたびにすぐ保存する（確認なし）
+// 入れられるのは、教習生がQRコードを読み取ってアプリを開くまで（lastAccessAt が付くまで）。開いた後は教習生にバトンタッチ（2026-11-12 依頼者指定。
+// それまでは「登録から1ヶ月」だった）。出す日は今日から来月の末日まで（教習生の画面と同じ2か月分。過ぎた日は出さない）。押すたびにすぐ保存する（確認なし）
 const AV = { s: null, days: [], m: {} };
 function availDays(s) {
-  const base = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate() : s.startDate ? parseDate(s.startDate) : null;
-  if (!base) return { days: [] };
-  const b = new Date(base.getFullYear(), base.getMonth(), base.getDate()), end = new Date(b.getFullYear(), b.getMonth() + 1, b.getDate()), t0 = today();
-  const days = []; for (let d = t0 > b ? t0 : b; d < end; d = addDays(d, 1)) days.push(dateStr(d));
-  return { days, last: dateStr(addDays(end, -1)) };
+  if (s.lastAccessAt) return { days: [], opened: true };
+  const t0 = today(), end = new Date(t0.getFullYear(), t0.getMonth() + 2, 1);
+  const days = []; for (let d = t0; d < end; d = addDays(d, 1)) days.push(dateStr(d));
+  return { days };
 }
 function availBtn(s) {
-  const a = availDays(s);
-  return a.days.length ? `<button class="btn full" data-act="availEdit" data-s="${s.token}">空き時間を入力する（登録から1ヶ月・${+a.last.slice(5, 7)}月${+a.last.slice(8)}日まで）</button>`
-    : `<button class="btn full" disabled>空き時間を入力する（登録から1ヶ月を過ぎたため使えません）</button>`;
+  return availDays(s).opened ? `<button class="btn full" disabled>空き時間を入力する（教習生がアプリを使い始めたため、教習生が入力します）</button>`
+    : `<button class="btn full" data-act="availEdit" data-s="${s.token}">空き時間を入力する（教習生がアプリを開くまで）</button>`;
 }
 const avOn = (d, p) => !!(AV.m[d.slice(0, 7)] && AV.m[d.slice(0, 7)].slots.has(slotKey(+d.slice(8), p)));
 async function availSheet(s) {
+  // 開いている間に教習生がアプリを開いたかもしれないので、最新の状態を読み直す
+  try { const fresh = await getDoc(doc(db, "students", s.token)); if (fresh.exists()) s = { ...s, ...fresh.data(), token: s.token }; } catch (e) { }
   AV.s = s; AV.days = availDays(s).days; AV.m = {};
-  if (!AV.days.length) return toast("登録から1ヶ月を過ぎたため、空き時間は入れられません");
+  if (availDays(s).opened) return toast("教習生がアプリを使い始めたため、空き時間は教習生が入力します");
   for (const ym of [...new Set(AV.days.map(d => d.slice(0, 7)))]) {
     const r = await getDoc(doc(db, "students", s.token, "months", ym));
     AV.m[ym] = { slots: new Set(r.exists() ? r.data().slots || [] : []), late: !!(r.exists() && r.data().late), sunOk: !!(r.exists() && r.data().sunOk) };
@@ -437,7 +438,7 @@ async function availSheet(s) {
 function drawAvail() {
   const s = AV.s, ds = AV.days, n = ds.reduce((c, d) => c + [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(p => avOn(d, p)).length, 0);
   let h = `<h3>${esc(s.name)}さんの空き時間</h3>
-  <p style="font-size:13px;margin:0 0 8px">教習生の代わりに、予約を入れてよい時間に◯を付けます。押すとすぐに保存されます。入れられるのは<b>登録した日から1ヶ月（${ds[0].slice(5).replace("-", "/")}〜${ds[ds.length - 1].slice(5).replace("-", "/")}）</b>だけです。</p>
+  <p style="font-size:13px;margin:0 0 8px">教習生の代わりに、予約を入れてよい時間に◯を付けます。押すとすぐに保存されます。入れられるのは<b>教習生がQRコードを読み取ってアプリを開くまで</b>です（開いた後は教習生が入力します）。今日から来月の末日まで（${ds[0].slice(5).replace("-", "/")}〜${ds[ds.length - 1].slice(5).replace("-", "/")}）が出ます。</p>
   <div class="gridwrap"><table class="cal calt"><thead><tr><th class="pl"></th>`;
   ds.forEach(d => { const w = new Date(d + "T00:00:00").getDay(); h += `<th scope="col" class="day ${w === 6 ? "sat" : w === 0 ? "sun" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<small>${WD[w]}</small></th>`; });
   h += `</tr><tr class="dayall"><th class="pl"><small>全部</small></th>`;
@@ -448,7 +449,7 @@ function drawAvail() {
     ds.forEach(d => { const on = avOn(d, p); h += `<td><button class="cell ${on ? "on" : ""}" data-act="avCell" data-d="${d}" data-p="${p}" aria-pressed="${on}" aria-label="${d} ${p}限">${on ? "◯" : ""}</button></td>`; });
     h += `</tr>`;
   }
-  h += `</tbody></table></div><p style="font-size:13px;margin:10px 0 6px">この1ヶ月の◯：<b>${n}</b>時限</p>
+  h += `</tbody></table></div><p style="font-size:13px;margin:10px 0 6px">この表の◯：<b>${n}</b>時限</p>
   <div class="list"><button class="btn full" data-act="avBack" data-s="${s.token}">編集に戻る</button><button class="btn primary full" data-act="close">閉じる</button></div>`;
   const sc = document.querySelector("#overlay .gridwrap"), x = sc ? sc.scrollLeft : 0;
   sheet(h);
@@ -456,7 +457,7 @@ function drawAvail() {
 }
 async function availToggle(t) {
   const d = t.dataset.d, ps = t.dataset.act === "avDay" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [+t.dataset.p];
-  if (!AV.days.includes(d)) return toast("登録から1ヶ月を過ぎた日は入れられません");
+  if (!AV.days.includes(d)) return toast("この日は入れられません");
   const ym = d.slice(0, 7), set = AV.m[ym].slots, on = t.dataset.act === "avDay" ? (t.dataset.on ? true : t.checked) : !avOn(d, ps[0]);
   // バスの人の日曜日は、教習生の画面と同じフォームで、バス以外で来られることを確かめてから入れる（依頼者指定）
   if (on && AV.s.commute === "bus" && new Date(d + "T00:00:00").getDay() === 0 && !t.dataset.busok) return availBusSheet(d, ps);
