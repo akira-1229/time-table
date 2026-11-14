@@ -831,12 +831,47 @@ async function gkPlace(x) {
   else await assign(x.token, d, q, true, true);
   toast(`${label(d, q)} に${nm(s)}を入れました`);
 }
+// 自動割り振りの仕上げ：同じ日に「1限 a・2限 b・3限 a」のように人が入り組んだら、入れ替えて「a・a・b」に詰める（依頼者指定 2026-11-14）。
+// 今回入れたふつうの教習（未確定）どうしだけ。入れ替えた後も、2人とも空き時間（◯）がありルールどおり（evaluate）の時だけ
+async function tidy(before) {
+  const mine = b => !before.has(b.id) && b.status === "draft" && !b.lessonType && !b.subUid && S.bookings.filter(x => x.date === b.date && x.period === b.period).length === 1;
+  const swapOk = (x, px, y, py) => {
+    const keep = [S.bookings, S.pending], out = a => a.filter(b => b !== x && b !== y);
+    S.bookings = out(S.bookings); S.pending = out(S.pending);
+    try {
+      const sx = ST(x.token), sy = ST(y.token);
+      if (!isFree(x.token, x.date, px) || !isFree(y.token, y.date, py) || evaluate(sx, x.date, px).ok === false) return false;
+      const tx = { ...x, period: px }; S.bookings.push(tx); S.pending.push(tx);
+      return evaluate(sy, y.date, py).ok !== false;
+    } finally { [S.bookings, S.pending] = keep; }
+  };
+  for (let n = 0; n < 50; n++) {
+    let did = false;
+    for (const d of days()) {
+      const row = S.bookings.filter(b => b.date === d && mine(b)).sort((a, b) => a.period - b.period);
+      for (let i = 0; i + 2 < row.length && !did; i++) {
+        const [a, m, c] = row.slice(i, i + 3);
+        if (a.token !== c.token || m.token === a.token || !linkedP(a.period, m.period) || !linkedP(m.period, c.period)) continue;
+        // 真ん中の人と、前か後ろの人を入れ替える
+        for (const [x, y] of [[a, m], [c, m]]) {
+          const px = y.period, py = x.period;
+          if (!swapOk(x, px, y, py)) continue;
+          await Promise.all([x, y].map(b => updateDoc(doc(db, "students", b.token, "bookings", b.id), { period: b === x ? px : py, updatedAt: serverTimestamp() })));
+          x.period = px; y.period = py; did = true; break;
+        }
+      }
+      if (did) break;
+    }
+    if (!did) break;
+  }
+}
 async function autoAssign() {
   if (S.confirmed) return toast("確定済みの週は自動で割り振れません");
   const AA = CFG.autoAssign || {}, max = AA.weeklyMax || 6, extra = AA.extra ?? 2, hs = AA.highSchool || {}, minW = AA.minPerWeek ?? 1, gk = new Map(), ng = new Set();
   let made = 0;
   const held = new Set();   // 学科の確認待ちの人のために取っておく枠（確認した時にそのまま入れられるように）
   const heldShared = new Map();   // 取っておいた枠のうち、一緒に受けられる教習（高速教習3時限など）の組：「日|始まりの時限|種類」→ 人数
+  const before = new Set(S.bookings.map(b => b.id));
   sheet(`<h3>自動で割り振っています…</h3><p style="font-size:13px;color:var(--muted)">少しお待ちください。</p>`);
   // 今週の予約が少ない人から（高校生は lead 時限分だけ先に。並んだら高校生→教習期限が近い人）
   const key = s => weekCount(s.token) - (isHighSchool(s) ? hs.lead || 0 : 0);
@@ -882,7 +917,15 @@ async function autoAssign() {
       const ev = ty ? evaluatePair(s, d, q, ty) : evaluate(s, d, q);
       if (ev.ok === false || ev.dark || ev.sunBus) continue;
       ok.push({ ...c, join: (ev.join || 0) + hn });
-      if (!sharedKind(s, tries)) break;   // ふつうの教習は、日時の早い順に最初の1つ
+    }
+    if (!sharedKind(s, tries) && ok.length) {
+      // ふつうの教習は日時の早い順。ただし飛び飛びにしない（依頼者指定 2026-11-14。1限 a・2限 b・3限 a のような組み方をしない）：
+      // ①その日もう入っている時限のすぐ隣（休みをはさまない）があれば一番に
+      // ②無ければ一番早い枠の日の中で、ほかの人の続き（その人が入っている時限のすぐ隣で、その人も空いていて、まだ入れてよい）にならない枠
+      const near = (tok, d, q) => S.bookings.some(b => b.token === tok && b.date === d && (linkedP(b.period, q) || linkedP(q, b.period)));
+      const steals = c => S.students.some(o => o !== s && near(o.token, c.d, c.q) && isFree(o.token, c.d, c.q) && want(o) && evaluate(o, c.d, c.q).ok !== false);
+      const pick = ok.find(c => near(s.token, c.d, c.q)) || ok.find(c => c.d === ok[0].d && !steals(c)) || ok[0];
+      ok.splice(0, ok.length, pick);
     }
     // 一緒に入れる組があれば、人数の多い組から（3人まで）
     ok.sort((a, b) => (b.join > 0) - (a.join > 0) || b.join - a.join);
@@ -929,6 +972,7 @@ async function autoAssign() {
       if (!progress) break;
     }
    }
+   await tidy(before);
   } finally { closeSheet(); S.gkList = [...gk].map(([token, v]) => ({ token, week: wid(), ...v })); render(); }
   const none = S.students.filter(s => !weekCount(s.token) && !(s[`mikiwame${s.stage}`] || {}).passed);
   // 1人だけになった危険予測・高速教習（一緒に入れる人がいなかった）
