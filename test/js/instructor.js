@@ -491,7 +491,7 @@ function render() {
   if (!S.uid) return;
   const ds = days(); const wEnd = ds[ds.length - 1];
   let h = `<div class="topbar"><div><h1>予約の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員・担当 ${S.students.length}人</small></div>
-    <span><button class="linkbtn" data-act="reload">最新の情報に更新</button></span></div>`;
+    <span><button class="refbtn" data-act="reload" aria-label="最新の情報に更新"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v6h-6z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>更新</button></span></div>`;
   // 週の切り替えは、マス目のすぐ上に出す（依頼者指定）
   const weekNav = `<div class="weeknav"><button class="btn" data-act="wk" data-v="-7" aria-label="前の週">◀</button><b>${md(ds[0])}〜${md(wEnd)}</b><button class="btn" data-act="wk" data-v="7" aria-label="次の週">▶</button></div>`;
   if (S.loading) { root.innerHTML = h + weekNav + `<div class="loading">読み込み中…</div>`; return; }

@@ -148,6 +148,8 @@ table.wk{border-collapse:separate;border-spacing:3px;width:100%;table-layout:fix
 .topbar h1{font-size:16px;margin:0;white-space:nowrap}
 .topbar>span{text-align:right}
 .topbar small{color:var(--muted);font-size:12px}
+.refbtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:6px 16px;border:2px solid var(--line);border-radius:14px;background:var(--bg);color:var(--green);font:inherit;font-size:16px;font-weight:700;letter-spacing:.05em;cursor:pointer}
+.refbtn:active{opacity:.7}
 .linkbtn{border:0;background:none;color:var(--blue);font-weight:700;padding:8px;min-height:44px}
 a.linkbtn{text-decoration:none;display:inline-flex;align-items:center;vertical-align:middle}
 .center{text-align:center}
