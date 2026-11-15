@@ -45,7 +45,7 @@ Firebase JS SDK は `10.12.2` を gstatic から読み込む。npm やバンド�
   manifest-student.json    start_url を書いていない（ホーム画面追加時に ?t= 付きURLを使わせるため）
   manifest-staff.json
   img/logo.png             学園のロゴ（背景を透明にしたもの。読み込み画面で使う）
-  css/app.css              色はCSS変数。文字「大きめ」は .wrap と .sheet だけ zoom（body ごと zoom すると iPhone で下の固定タブが途中で止まる）。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic
+  css/app.css              色はCSS変数。文字「大きめ」は .wrap と .sheet だけ zoom（body ごと zoom すると iPhone で下の固定タブが途中で止まる）。ライト＝背景白（--page）、ダーク＝背景黒の落ち着いた色（data-theme で切り替え、未設定は端末の設定に合わせる）。フォントは BIZ UDPGothic。iPhone の上（時刻の下）は端末がぼかしをかけるため、上の余白を `--top`（safe-area の1.5倍）にして背景色で塗りつぶす（`body::before`。文字がぼやけないように。2026-11-15 依頼者指定）
   js/config.js             設定とルール（公開してよい値だけ。classic script で self.APP_CONFIG を作る）
   js/backend.js            本番Firebaseとデモ用DBの切り替え（両方を静的importして選ぶ。iPhoneのSafariで止まったため top-level await は使わない）
   js/boot.js               起動時の読み込み画面（各画面の body 直下の #splash。暗い背景で img/logo.png を9枚 translateZ で0.5pxずつずらして重ね、厚み約4px（3pt。依頼者指定）のロゴを3Dで横回転。#boot が消えたら最低0.8秒見せてフェードで消す）。「読み込み中」のまま15秒止まったら理由と対処を出す（classic script。各画面が self.__boot に進み具合を足す）
