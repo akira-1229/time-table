@@ -468,6 +468,6 @@ body.pc .adm tr.k2blink>td{animation:k2blink-row 1.4s ease-in-out infinite}
 .pres.on{background:#22C55E;box-shadow:0 0 0 3px color-mix(in srgb,#22C55E 30%,transparent)}
 .pres.y{background:#EAB308}
 .pres.r{background:#DC2626}
-.pres.off{background:#111;border-color:#888}
+.pres.off{background:#FFFFFF;border-color:#9CA3AF}
 .preslegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:6px 2px 10px}
 .preslegend span{display:inline-flex;align-items:center}
