@@ -477,15 +477,15 @@ function startBeat() {
 // lastAccessAt（Timestamp）から色と説明
 export function presenceOf(ts) {
   const t = ts && ts.toMillis ? ts.toMillis() : 0;
-  if (!t) return { c: "off", label: "まだアプリを開いていません" };
+  if (!t) return { c: "off", label: "一日を超えて未アクセス（まだ一度も開いていません）" };
   const sec = (Date.now() - t) / 1000, ago = sec < 3600 ? `${Math.max(1, Math.round(sec / 60))}分前` : sec < 86400 ? `${Math.floor(sec / 3600)}時間前` : `${Math.floor(sec / 86400)}日前`;
-  if (sec <= PRES.onlineSec) return { c: "on", label: "いまアプリを開いています" };
-  if (sec <= PRES.yellowH * 3600) return { c: "y", label: `閉じています（${ago}まで開いていました）` };
-  if (sec <= PRES.redH * 3600) return { c: "r", label: `閉じています（${ago}まで開いていました）` };
-  return { c: "off", label: `${PRES.redH}時間以上開いていません（最後は${ago}）` };
+  if (sec <= PRES.onlineSec) return { c: "on", label: "オンライン" };
+  if (sec <= PRES.yellowH * 3600) return { c: "y", label: `12時間以内アクセス（${ago}）` };
+  if (sec <= PRES.redH * 3600) return { c: "r", label: `24時間以内にアクセス（${ago}）` };
+  return { c: "off", label: `一日を超えて未アクセス（最後は${ago}）` };
 }
 export const presDot = (tok, ts) => { const p = presenceOf(ts); return `<i class="pres ${p.c}" data-pres="${esc(tok)}" title="${esc(p.label)}" role="img" aria-label="${esc(p.label)}"></i>`; };
-export const presLegend = () => `<div class="preslegend"><span><i class="pres on"></i>開いている</span><span><i class="pres y"></i>${PRES.yellowH}時間以内</span><span><i class="pres r"></i>${PRES.redH}時間以内</span><span><i class="pres off"></i>${PRES.redH}時間より前</span></div>`;
+export const presLegend = () => `<div class="preslegend"><span><i class="pres on"></i>オンライン</span><span><i class="pres y"></i>12時間以内アクセス</span><span><i class="pres r"></i>24時間以内にアクセス</span><span><i class="pres off"></i>一日を超えて未アクセス</span></div>`;
 
 /* ---------- アプリを開いた時のお知らせ（教習生・指導員共通の見出し） ---------- */
 // あいさつ：3時〜12時「おはようございます！」、12時〜18時「こんにちは！」、18時〜翌3時「こんばんは！」
