@@ -5,9 +5,9 @@
 //   ログインは指導員の画面のものをそのまま使い、ここではログインしない。自分の担当の教習生の登録・編集・削除・QR
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "./backend.js";
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, limit, serverTimestamp, writeBatch
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, collectionGroup, query, where, orderBy, limit, serverTimestamp, writeBatch, onSnapshot
 } from "./backend.js";
-import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, kentei2LimitNg, kentei2Soon, progressBarHtml, longDate, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO } from "./common.js";
+import { CFG, app as fbApp, db, esc, toast, sheet, closeSheet, onOverlayClose, friendlyError, lessonMin, doneOf, mikiwameOf, kenteiText, ageText, kentei1AgeNg, kentei2LimitNg, kentei2Soon, progressBarHtml, longDate, P, dateStr, addDays, slotKey, karimenExpiryOf, expiriesOf, expiryText, toKatakana, toHalfDigits, isKatakana, parseDate, today, isPC, viewToggle, onViewChange, indexLinkOf, applyView, lookSettingsHtml, pcTable, nextSort, WD, DEMO, presDot, presLegend, presenceOf } from "./common.js";
 
 const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("admin");
@@ -64,6 +64,7 @@ async function loadAll() {
   const sq = S.isAdmin ? collection(db, "students") : query(collection(db, "students"), where("instructorUid", "==", S.uid));
   S.students = (await getDocs(sq)).docs.map(d => ({ token: d.id, ...d.data() }))
     .sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
+  watchPresence(sq);
   // 次の教習（確定済み・まだチェックしていない・今日以降で一番早い予約）。進み具合のグラフに出す（指導員の画面だけ）
   S.next = {};
   if (!S.isAdmin) {
@@ -79,6 +80,22 @@ async function loadAll() {
   render();
 }
 
+// 教習生のオンライン・オフライン（名前の前の丸の色）。lastAccessAt の変化だけを受け取り、丸だけ描き直す（入力中の画面を崩さない）
+let presUnsub = null, presTimer = null;
+function watchPresence(sq) {
+  if (presUnsub) presUnsub();
+  presUnsub = onSnapshot(sq, snap => {
+    snap.docs.forEach(d => { const s = S.students.find(x => x.token === d.id); if (s) s.lastAccessAt = d.data().lastAccessAt; });
+    paintPresence();
+  }, () => { });
+  if (!presTimer) presTimer = setInterval(paintPresence, 30000);
+}
+function paintPresence() {
+  document.querySelectorAll("[data-pres]").forEach(el => {
+    const s = S.students.find(x => x.token === el.dataset.pres); if (!s) return;
+    const p = presenceOf(s.lastAccessAt); el.className = `pres ${p.c}`; el.title = p.label; el.setAttribute("aria-label", p.label);
+  });
+}
 function render() {
   if (!S.uid) return;
   if (isPC()) return renderPC();
@@ -126,7 +143,7 @@ function renderStudentsPC() {
   const list = filtered();
   const cols = [
     { t: `<input type="checkbox" data-act="selPage" aria-label="表示中を全選択" ${list.length && list.every(s => S.sel.has(s.token)) ? "checked" : ""}>`, html: s => `<input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">` },
-    { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
+    { k: "studentNo", t: "番号" }, { k: "nameKana", t: "名前", html: s => `${presDot(s.token, s.lastAccessAt)}${esc(s.name)}<br><small style="color:var(--muted)">${esc(s.nameKana || "")}</small>` },
     { k: "birthDate", t: "生年月日", v: s => longDate(s.birthDate) }, { k: "age", t: "年齢", v: s => ageText(s.birthDate), sort: s => s.birthDate ? -new Date(s.birthDate) : 1 },
     { k: "stage", t: "段階", v: s => `第${s.stage}段階` }, { k: "license", t: "希望免許" }, { k: "heldLicense", t: "所持免許" },
     { k: "done", t: "進み具合", html: progressBar, sort: s => (s.stage === 2 ? 100 : 0) + doneOf(s) },
@@ -140,7 +157,7 @@ function renderStudentsPC() {
   return `<h2>${S.isAdmin ? "教習生（全員）" : "担当の教習生"}</h2>
     <div class="pctool"><button class="btn primary" data-act="new">＋ 教習生を追加</button><input id="flt" value="${esc(S.filter)}" placeholder="名前・番号・希望免許${S.isAdmin ? "・担当" : ""}で絞り込み" aria-label="絞り込み">
     <span class="sp"></span><span style="font-size:13px;color:var(--muted)">${list.length}人表示・${S.sel.size}人選択中</span><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button></div>
-    ${list.length ? pcTable(cols, list, S.sort, s => alertCls(s)) : '<div class="loading">教習生がいません</div>'}`;
+    ${presLegend()}${list.length ? pcTable(cols, list, S.sort, s => alertCls(s)) : '<div class="loading">教習生がいません</div>'}`;
 }
 
 // 卒業検定の期限（みきわめ合格から3ヶ月）・教習期限・仮免期限（expiryWarnDays 日以内・過ぎた人も）が迫っている教習生は、
@@ -153,12 +170,12 @@ function renderStudents() {
   <div class="tools" style="grid-template-columns:1fr 1fr 1fr"><button class="btn primary" data-act="new">教習生を追加</button><button class="btn" data-act="print" ${S.sel.size ? "" : "disabled"}>QRカードを印刷（${S.sel.size}人）</button><button class="btn" data-act="selAll">表示中を全選択</button></div>
   <div class="row" style="margin-top:10px"><div class="field"><label for="flt">絞り込み（名前・番号${S.isAdmin ? "・担当" : ""}）</label><input id="flt" value="${esc(S.filter)}"></div>
   <div class="field"><label for="msort">並べ替え</label><select id="msort">${SORTS.filter(x => !(x[4] && S.isAdmin)).map(([k, t]) => `<option value="${k}" ${S.msort === k ? "selected" : ""}>${t}</option>`).join("")}</select></div></div>
-  <div class="scards">`;
+  ${presLegend()}<div class="scards">`;
   // スマホ：1人1枚のカード（横にずらさなくても編集ボタンが見えるように。依頼者指定）。進み具合は横棒グラフ
   list.forEach(s => {
     const st = s.graduatedOn ? '<span class="tag ok">卒業</span>' : s.active === false ? '<span class="tag wait">停止</span>' : "";
     h += `<div class="scard ${alertCls(s)}"><div class="sc-top"><input type="checkbox" data-act="sel" data-s="${s.token}" ${S.sel.has(s.token) ? "checked" : ""} aria-label="選択">
-      <div class="sc-name"><b>${esc(s.name)}</b> <small>${esc(s.nameKana || "")}</small><br><small>${esc(s.studentNo || "番号なし")}・第${s.stage}段階${s.license ? `・${esc(s.license)}` : ""}</small>${st ? ` ${st}` : ""}</div>
+      <div class="sc-name">${presDot(s.token, s.lastAccessAt)}<b>${esc(s.name)}</b> <small>${esc(s.nameKana || "")}</small><br><small>${esc(s.studentNo || "番号なし")}・第${s.stage}段階${s.license ? `・${esc(s.license)}` : ""}</small>${st ? ` ${st}` : ""}</div>
       <button class="btn" data-act="edit" data-s="${s.token}">編集</button></div>
       ${progressBar(s)}${mkText(s) ? `<div class="sc-mk">${esc(mkText(s))}</div>` : ""}${S.isAdmin ? `<div class="sc-mk">担当：${assignSelect(s)}</div>` : ""}</div>`;
   });

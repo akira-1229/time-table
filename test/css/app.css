@@ -462,3 +462,12 @@ body.pc .adm tr.k2blink>td{animation:k2blink-row 1.4s ease-in-out infinite}
 /* 教習生の表：担当指導員の✕（不在）の時間は灰色（◯は付けられる。依頼者指定） */
 .cell.off:not(.on){background:var(--line);border-color:var(--line);color:var(--muted)}.cell.off small{font-size:9px;font-weight:700}
 .cell.on.off{box-shadow:inset 0 0 0 2px var(--line)}
+
+/* 教習生のオンライン・オフライン（指導員の「教習生の管理」。2026-11-18 依頼者指定） */
+.pres{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;flex:none;border:1.5px solid transparent}
+.pres.on{background:#22C55E;box-shadow:0 0 0 3px color-mix(in srgb,#22C55E 30%,transparent)}
+.pres.y{background:#EAB308}
+.pres.r{background:#DC2626}
+.pres.off{background:#111;border-color:#888}
+.preslegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:6px 2px 10px}
+.preslegend span{display:inline-flex;align-items:center}

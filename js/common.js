@@ -455,7 +455,37 @@ export function trackAccess(kind, who, iu = "") {
   accessKind = kind; accessWho = who; accessIu = iu || "";
   logAccess();
   if (!accessListening) { accessListening = true; document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") logAccess(); }); }
+  if (kind === "student") startBeat();
 }
+/* ---------- 教習生のオンライン・オフライン（指導員の画面に色で出す。2026-11-18 依頼者指定） ---------- */
+// 教習生のアプリが開いている間は beatSec 秒おきに lastAccessAt を書く（閉じた時・裏に回した時にも1回）。
+// 指導員の画面は lastAccessAt からの時間で色を付ける：開いている（onlineSec 秒以内）緑／yellowH 時間以内 黄／redH 時間以内 赤／それより前・まだ開いていない 黒
+const PRES = Object.assign({ beatSec: 30, onlineSec: 90, yellowH: 12, redH: 24 }, CFG.presence || {});
+let beatOn = false, beatLast = 0;
+function beat(force) {
+  if (!accessWho || accessKind !== "student") return;
+  if (!force && (document.visibilityState !== "visible" || Date.now() - beatLast < PRES.beatSec * 1000 - 2000)) return;
+  beatLast = Date.now();
+  updateDoc(doc(db, "students", accessWho), { lastAccessAt: serverTimestamp() }).catch(() => { });
+}
+function startBeat() {
+  if (beatOn) return; beatOn = true;
+  setInterval(() => beat(), PRES.beatSec * 1000);
+  document.addEventListener("visibilitychange", () => beat(true));   // 開いた時・閉じた（裏に回した）時
+  window.addEventListener("pagehide", () => beat(true));
+}
+// lastAccessAt（Timestamp）から色と説明
+export function presenceOf(ts) {
+  const t = ts && ts.toMillis ? ts.toMillis() : 0;
+  if (!t) return { c: "off", label: "まだアプリを開いていません" };
+  const sec = (Date.now() - t) / 1000, ago = sec < 3600 ? `${Math.max(1, Math.round(sec / 60))}分前` : sec < 86400 ? `${Math.floor(sec / 3600)}時間前` : `${Math.floor(sec / 86400)}日前`;
+  if (sec <= PRES.onlineSec) return { c: "on", label: "いまアプリを開いています" };
+  if (sec <= PRES.yellowH * 3600) return { c: "y", label: `閉じています（${ago}まで開いていました）` };
+  if (sec <= PRES.redH * 3600) return { c: "r", label: `閉じています（${ago}まで開いていました）` };
+  return { c: "off", label: `${PRES.redH}時間以上開いていません（最後は${ago}）` };
+}
+export const presDot = (tok, ts) => { const p = presenceOf(ts); return `<i class="pres ${p.c}" data-pres="${esc(tok)}" title="${esc(p.label)}" role="img" aria-label="${esc(p.label)}"></i>`; };
+export const presLegend = () => `<div class="preslegend"><span><i class="pres on"></i>開いている</span><span><i class="pres y"></i>${PRES.yellowH}時間以内</span><span><i class="pres r"></i>${PRES.redH}時間以内</span><span><i class="pres off"></i>${PRES.redH}時間より前</span></div>`;
 
 /* ---------- アプリを開いた時のお知らせ（教習生・指導員共通の見出し） ---------- */
 // あいさつ：3時〜12時「おはようございます！」、12時〜18時「こんにちは！」、18時〜翌3時「こんばんは！」
