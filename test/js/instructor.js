@@ -521,8 +521,10 @@ function trayHtml() {
   if (!S.students.length) return "";
   // 予定表の右横に縦に並べる（できるだけ多くの人が入るよう1人1行・小さめ。2026-11-20 依頼者指定）
   const list = S.students.slice().sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
-  return `<div class="tray" aria-label="担当の教習生（長押しで予定表へドラッグ）"><div class="tray-h">教習生<small>タップ：入れる枠<br>長押し：詳細</small></div>
-    <div class="tray-l">${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(String(s.studentNo || "").slice(-4))}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}</span></button>`; }).join("")}</div></div>`;
+  // 人数が多い時（15人以上）は2列にして小さく詰める（40人でも予定表の横にほぼ入るように。2026-11-21 依頼者指定）。番号順に左の列の上から下へ
+  const dense = list.length > 14, rows = Math.ceil(list.length / 2);
+  return `<div class="tray${dense ? " dense" : ""}" aria-label="担当の教習生（タップで入れる枠・長押しで詳細）"><div class="tray-h">教習生 ${list.length}人<small>タップ：枠／長押し：詳細</small></div>
+    <div class="tray-l"${dense ? ` style="grid-template-rows:repeat(${rows},auto)"` : ""}>${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(String(s.studentNo || "").slice(-4))}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}</span></button>`; }).join("")}</div></div>`;
 }
 // 予約（危険予測・高速教習は組ごと）をいったん外して、別の枠に置けるか
 function moveEval(ids, d, a) {
