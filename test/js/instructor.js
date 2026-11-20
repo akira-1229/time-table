@@ -234,14 +234,39 @@ const goneDraft = b => b.status === "draft" && !isFree(b.token, b.date, b.period
 /* ---------- 何時限目か（進み具合） ---------- */
 const pendingOf = s => S.pending.filter(b => b.token === s.token && (b.stage ?? s.stage) === s.stage);
 const planOf = (s, extra = []) => lessonPlan(s, [...pendingOf(s), ...extra]);
+// 第1段階の最低時限（12）まで入っていて、みきわめをまだしていない人は、次の予約から第2段階の1時限目（2-1）として数える（依頼者指定 2026-11-20）。
+// みきわめ不合格の時だけ、第1段階のまま13・14…と続ける。みきわめ合格で検定日が決まっていれば、その後も第2段階として入れる。
+// 検定日（決まっていれば・予定も）が分かっている時は、第2段階はその翌日の5時限目から（kenteiBlock）
+const kenteiDay1 = s => { const m = s.mikiwame1; return m && m.passed ? m.kenteiDate || null : s.kenteiPlan1 || null; };
+const asStage2 = s => ({ ...s, stage: 2, priorDone: 0, doneCount: 0, kikenDone: false, hwDone: false, mikiwame2: null, kenteiPlan2: null, _v: true, _kentei: kenteiDay1(s) });
+function eff(s) {
+  if (!s || s._v || s.stage !== 1) return s;
+  const m = s.mikiwame1;
+  if (m && (!m.passed || !m.kenteiDate)) return s;   // 不合格＝第1段階のまま／合格で検定日が未確定＝検定待ち
+  if (!m && lessonPlan(s, pendingOf(s)).total < lessonMin(1, s)) return s;
+  return asStage2(s);
+}
+// 予約が数えられる段階の教習生（第1段階の人の、先に入れた第2段階の予約は第2段階として数える）
+const stOf = b => { const s = ST(b.token); if (!s) return null; const st = b.stage ?? s.stage; return st === s.stage ? s : st === 2 ? asStage2(s) : { ...s, stage: st, _v: true }; };
+function kenteiBlock(s, ds, p) {
+  if (!s._v || s.stage !== 2) return "";
+  // 第1段階の最後の教習（みきわめ）と同じ日・それより前には入れない（間に修了検定があるため）
+  const last1 = S.pending.filter(b => b.token === s.token && (b.stage ?? 1) === 1).reduce((m, b) => b.date > m ? b.date : m, "");
+  if (last1 && ds <= last1) return `第2段階の教習は、第1段階の最後の教習（${md(last1)}）より後の日に入れてください`;
+  if (!s._kentei) return "";
+  const next = dateStr(addDays(parseDate(s._kentei), 1));
+  if (ds <= s._kentei) return `第2段階の教習は、検定日（${md(s._kentei)}）の後に入れてください`;
+  if (ds === next && p < 5) return `検定日の翌日（${md(next)}）は、5時限目から入れられます`;
+  return "";
+}
 // 予約を足した時に、危険予測の順番（ちょうど○時限目）が崩れないか。すでに崩れている時は、直すための操作を止めない
 function seqCheck(s, extra) {
   if (!planOf(s).ok) return "";
   const after = planOf(s, extra);
   return after.ok ? "" : after.reason;
 }
-const itemOf = b => { const s = ST(b.token); return s ? planOf(s).items.find(it => it.bookings.some(x => x.id === b.id)) : null; };
-const noText = (s, it) => it ? `${noRange(it)}時限目${it.no + it.units - 1 > lessonMin(s.stage, s) ? "（延長）" : ""}` : "";
+const itemOf = b => { const s = stOf(b); return s ? planOf(s).items.find(it => it.bookings.some(x => x.id === b.id)) : null; };
+const noText = (s, it) => it ? `${s._v ? `第${s.stage}段階 ` : ""}${noRange(it)}時限目${it.no + it.units - 1 > lessonMin(s.stage, s) ? "（延長）" : ""}` : "";
 
 /* ---------- 判定 ---------- */
 // その時限の自分の予約（ほかの指導員に依頼した予約は除く。依頼した時限には、別の教習生を入れられる）
@@ -258,7 +283,7 @@ const lessonNoAt = (s, ds, p) => { const it = planOf(s, [{ id: "__new", token: s
 function multiGroup(ds, p) {
   const list = S.bookings.filter(b => b.date === ds && b.period === p && !b.subUid);
   if (!list.length) return [];
-  return list.every(b => { const s = ST(b.token), it = !b.lessonType && s && itemOf(b); return it && isMultiNo(s, it.no); }) ? list.map(b => b.token) : null;
+  return list.every(b => { const s = stOf(b), it = !b.lessonType && s && itemOf(b); return it && isMultiNo(s, it.no); }) ? list.map(b => b.token) : null;
 }
 // 何人かで一緒に受けられる教習：高速教習（3時限）は3人まで、危険予測は3人まで（config の capacity。依頼者指定）
 const SHARED = ["hw3", "kiken"];
@@ -319,8 +344,9 @@ function dateBlock(s, ds) {
 }
 // viaSub：ほかの指導員に依頼して入れる時（自動割り振り）。自分の✕・予約は見ない（相手が空いているかは呼ぶ側で見る）
 function evaluate(s, ds, p, viaSub) {
+  s = eff(s);
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
-  { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
+  { const r = dateBlock(s, ds) || kenteiBlock(s, ds, p); if (r) return { ok: false, reason: r }; }
   if (!viaSub && isOff(ds, p)) return { ok: false, reason: "指導員の予定（✕）が入っている枠です" };
   if (!viaSub && subAt(ds, p)) return { ok: false, reason: "ほかの指導員から頼まれた教習が入っている時間です" };
   if (!isFree(s.token, ds, p)) return { ok: false, reason: "空いていない枠です" };
@@ -381,6 +407,7 @@ const pairOk = (a, type = "kiken") => type === "hw3"
 const pairsWith = (p, type = "kiken") => [p - 2, p - 1, p].filter(a => a >= 1 && a <= p && p < a + LEN(type) && pairOk(a, type));   // p限を含む組の開始時限
 // その教習生が、いま危険予測・高速教習の番か（番の時だけ、その種類を選べる）
 const specialTypes = s => {
+  s = eff(s);
   if (!hasSpecial(s)) return [];
   const n = nextSpecial(s, pendingOf(s));
   return n === "kiken" ? ["kiken"] : n === "hw" ? ["hwSolo", "hw3"] : [];
@@ -393,9 +420,10 @@ function isCombo(list) {
 }
 //   ok:true（dark:true は日没が早い期間の警告付き）／ok:false（reason に理由）
 function evaluatePair(s, ds, a, type = "kiken") {
+  s = eff(s);
   const L = PT(type).label, ps = span(a, type);
   if (isPast(ds)) return { ok: false, reason: "過ぎた日には予約を入れられません" };
-  { const r = dateBlock(s, ds); if (r) return { ok: false, reason: r }; }
+  { const r = dateBlock(s, ds) || kenteiBlock(s, ds, a); if (r) return { ok: false, reason: r }; }
   if (!hasSpecial(s)) return { ok: false, reason: `第${s.stage}段階には${L}はありません` };
   if (!pairOk(a, type)) return { ok: false, reason: type === "hw3"
     ? `${spanText(a, type)}限の${L}は入れられません（${(CFG.highwaySets || []).map(x => x.join("・")).join(" / ")} 限のみ）`
@@ -709,6 +737,7 @@ const lessonsOf = (stage, k) => ((CFG.lessons || {})[stage] || {})[k] || "";
 
 // 学科の受講確認（config の gakkaCheck）：入れようとしている教習が、決まった時限目（第2段階の10・13時限目など）に当たる時に確認を出す
 function gakkaAsk(s, ds, periods, lessonType = "") {
+  s = eff(s);
   const rules = (CFG.gakkaCheck || []).filter(r => r.stage === s.stage);
   if (!rules.length) return [];
   const pairId = periods.length > 1 ? "__new" : undefined;
@@ -753,9 +782,9 @@ async function assignPair(tok, ds, a, type = "kiken", force, gk, quiet) {
   if (!gk) { const r = gakkaAsk(s, ds, span(a, type), type); if (r.length) return gakkaSheet(s, r, () => assignPair(tok, ds, a, type, force, true)); }
   const L = PT(type).label;
   const status = S.confirmed ? "confirmed" : "draft";
-  const pairId = `${tok.slice(0, 6)}_${ds}_${a}`;
+  const pairId = `${tok.slice(0, 6)}_${ds}_${a}`, stg = eff(s).stage;   // 第1段階で12時限目まで入っている人は第2段階として入れる
   for (const q of span(a, type)) {
-    const data = { instructorUid: S.uid, date: ds, period: q, weekId: wid(), status, cancelRequested: false, lessonType: type, pairId, result: null, stage: s.stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    const data = { instructorUid: S.uid, date: ds, period: q, weekId: wid(), status, cancelRequested: false, lessonType: type, pairId, result: null, stage: stg, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
     if (type !== "kiken") { data.highway = true; if (ev.dark) data.forced = true; }
     const ref = await addDoc(collection(db, "students", tok, "bookings"), data);
     S.bookings.push({ id: ref.id, token: tok, ...data }); S.pending.push(S.bookings.at(-1));
@@ -772,7 +801,7 @@ async function assign(tok, ds, p, gk, quiet) {
   if (ev.sunBus && !quiet && !busConfirm(s)) return;
   if (!gk) { const r = gakkaAsk(s, ds, [p]); if (r.length) return gakkaSheet(s, r, () => assign(tok, ds, p, true)); }
   const status = S.confirmed ? "confirmed" : "draft";
-  const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status, cancelRequested: false, result: null, stage: s.stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status, cancelRequested: false, result: null, stage: eff(s).stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
   const ref = await addDoc(collection(db, "students", tok, "bookings"), data);
   S.bookings.push({ id: ref.id, token: tok, ...data }); S.pending.push(S.bookings.at(-1));
   if (S.confirmed) { await notifyStudent(tok, "added", "予約が追加されました", label(ds, p)); toast(`${nm(s)}に通知しました`); }
@@ -878,6 +907,7 @@ async function autoAssign() {
   const order = () => S.students.slice().sort((a, b) => key(a) - key(b) || isHighSchool(b) - isHighSchool(a) || String(a.deadline || "9").localeCompare(String(b.deadline || "9")));
   // まだ入れてよい人か（入れてよければ、入れる教習の種類の候補を返す）
   const want = s => {
+    s = eff(s);   // 第1段階で12時限目まで入っていて、みきわめ前の人は第2段階として数える
     if (weekCount(s.token) >= max + (isHighSchool(s) ? hs.extraMax || 0 : 0) || gk.has(s.token)) return null;
     const mk = s[`mikiwame${s.stage}`], pl = planOf(s);
     if (mk && mk.passed) return null;
@@ -894,11 +924,12 @@ async function autoAssign() {
   };
   // 担当（自分）の枠に1つ入れる。"ok"＝入れた、"skip"＝学科の確認が要るので入れない、""＝入る枠がない
   // 何人かで一緒に受けられる教習の番か（第2段階：11時限目＝複数教習、12時限目＝危険予測、13時限目〜＝高速教習3時限）
-  const sharedKind = (s, tries) => !tries ? "" : tries.includes("kiken") ? "kiken" : tries.includes("hw3") ? "hw"
+  const sharedKind = (s, tries) => (s = eff(s), !tries) ? "" : tries.includes("kiken") ? "kiken" : tries.includes("hw3") ? "hw"
     : tries[0] === "" && isMultiNo(s, lessonPlan(s, pendingOf(s)).total + 1) ? "multi" : "";
   // 一緒に受けられる教習は、できるだけ何人かでまとめる（効率よく進めるため。依頼者指定 2026-11-09）：
   // ①すでに同じ教習が入っている時限に一緒に入れる（人数が多い組から埋める）→ ②同じ番のほかの人も空いている時限（空いている人が多いほど先）→ ③日時の早い順
   const slotsFor = (s, tries) => {
+    s = eff(s);
     const kind = sharedKind(s, tries), list = [];
     const peers = kind ? S.students.filter(o => o !== s && sharedKind(o, want(o)) === kind) : [];
     slotOrder(s, s[`mikiwame${s.stage}`]).forEach(([d, q], i) => tries.forEach((ty, k) => {
@@ -909,6 +940,7 @@ async function autoAssign() {
     return kind ? list.sort((a, b) => b.shareable - a.shareable || b.free - a.free || a.i - b.i || a.k - b.k) : list;
   };
   const ownOne = async (s, tries) => {
+    s = eff(s);
     const ok = [];
     for (const c of slotsFor(s, tries)) {
       const { d, q, ty, ps } = c;
@@ -1025,7 +1057,12 @@ async function markResult(ids, result, mk = null) {
   const list = S.pending.filter(b => ids.includes(b.id));
   if (!list.length) return;
   const tok = list[0].token, s = ST(tok), it = lessonItems(list)[0], planWas = s && s[`kenteiPlan${s.stage}`];
+  // 先に入れておいた第2段階の予約は、修了検定に合格して第2段階になってから実施にする
+  if (result === "done" && s && s.stage === 1 && list.some(b => b.stage === 2)) return toast("第2段階の教習です。先に修了検定の結果（合格）を入れてください");
   const batch = writeBatch(db);
+  // みきわめ不合格：先に第2段階として入れておいた予約は、第1段階の続き（13・14…時限目）に戻す（依頼者指定 2026-11-20）
+  const back = result === "done" && mk && !mk.passed && s && s.stage === 1 ? S.pending.filter(b => b.token === tok && b.stage === 2 && !ids.includes(b.id)) : [];
+
   list.forEach(b => batch.update(doc(db, "students", tok, "bookings", b.id), { result, resultAt: serverTimestamp(), updatedAt: serverTimestamp() }));
   const text = `${md(it.date)} ${list.map(b => b.period).sort((m, n) => m - n).join("・")}限${typeName(list[0]) ? `（${typeName(list[0])}）` : ""}`;
   if (result === "done") {
@@ -1042,6 +1079,8 @@ async function markResult(ids, result, mk = null) {
     batch.update(doc(db, "students", tok), { lastNotifiedAt: serverTimestamp() });
   }
   await batch.commit();
+  // 書き込みのルールの上限（1回20件の確認）に当たらないよう、4件ずつ分けて書く
+  for (let i = 0; i < back.length; i += 4) { const bb = writeBatch(db); back.slice(i, i + 4).forEach(b => bb.update(doc(db, "students", tok, "bookings", b.id), { stage: 1, updatedAt: serverTimestamp() })); await bb.commit(); }
   if (result !== "done") sendNow();
   if (s) {
     if (result === "done") { if (!s.skillStart || s.skillStart > it.date) s.skillStart = it.date; s.doneCount = (s.doneCount || 0) + it.units; if (it.lessonType === "kiken") s.kikenDone = true; if (isHwType(it.lessonType)) s.hwDone = true; if (mk) { s[`mikiwame${s.stage}`] = { ...mk, date: it.date, bookingIds: ids }; s[`kenteiPlan${s.stage}`] = null; } }
@@ -1049,6 +1088,8 @@ async function markResult(ids, result, mk = null) {
   }
   S.pending = S.pending.filter(b => !ids.includes(b.id));
   S.bookings.forEach(b => { if (ids.includes(b.id)) b.result = result; });
+  const backIds = new Set(back.map(b => b.id));
+  [...S.pending, ...S.bookings].forEach(b => { if (backIds.has(b.id)) b.stage = 1; });
   render();
   const planGone = mk && !mk.passed && planWas ? `。決まっていた検定日（${md(planWas)}）は取り消しました` : "";
   // その日の最後の教習のチェックなら、一日のまとめを出す（下の報告書の案内が出る時は、それを閉じた後に出る）
@@ -1530,4 +1571,4 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign };
+if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign, itemOf, eff };
