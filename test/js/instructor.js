@@ -13,7 +13,7 @@ const auth = getAuth(fbApp);
 self.__boot && self.__boot.push("instructor");
 const root = document.getElementById("app");
 const S = {
-  uid: null, me: null, view: "assign", week: addDays(mondayOf(today()), getPref("startweek", "next") === "this" ? 0 : 7), mode: getPref("startmode", "slot"), balOpen: getPref("balopen", "0") === "1", pick: null, ptype: null,
+  uid: null, me: null, view: "assign", week: addDays(mondayOf(today()), getPref("startweek", "next") === "this" ? 0 : 7), mode: "slot", balOpen: getPref("balopen", "0") === "1", pick: null, ptype: null,
   off: {}, offWeek: addDays(mondayOf(today()), 7), offTimers: {}, students: [], avail: {}, late: {}, bookings: [], pending: [], confirmed: false, cancelReqs: [], loading: false, indexLinks: new Set()
 };
 const wid = () => dateStr(S.week);
@@ -520,7 +520,7 @@ function countListHtml() {
 function trayHtml() {
   if (!S.students.length) return "";
   const list = S.students.slice().sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
-  return `<div class="tray"><div class="tray-h">教習生を<b>長押し</b>して、予定表の<b class="okc">緑の枠</b>までドラッグすると入ります。入れた予約も長押しで動かせます。</div>
+  return `<div class="tray"><div class="tray-h">教習生を<b>長押し</b>して、予定表の<b class="okc">青い枠</b>までドラッグすると入ります（短くタップすると青い枠を出したままにできます）。入れた予約も長押しで動かせます。</div>
     <div class="tray-l">${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(s.studentNo || "")}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}回</span></button>`; }).join("")}</div></div>`;
 }
 const DR = { timer: null, active: false, pend: false, swallow: false, src: null, x: 0, y: 0, ok: new Map(), ghost: null, hover: null, scroll: null };
@@ -548,6 +548,18 @@ function dragTargets(src) {
   });
   return ok;
 }
+// 教習生を短くタップした時：その人が入れる枠を青く光らせたままにする（タップで入る）
+function paintPick() {
+  if (!S.pick || !ST(S.pick) || S.view !== "assign") return;
+  dragTargets({ tok: S.pick }).forEach((v, td) => { td.classList.add("dropok"); td.dataset.pickok = v.ty || "-"; });
+}
+document.addEventListener("click", e => {
+  const td = S.pick && !DR.swallow && e.target.closest && e.target.closest("td[data-pickok]");
+  if (!td) return;
+  e.stopPropagation(); e.preventDefault();
+  const [d, ps] = td.dataset.cell.split("|"), ty = td.dataset.pickok === "-" ? "" : td.dataset.pickok, tok = S.pick;
+  (ty ? assignPair(tok, d, +ps, ty) : assign(tok, d, +ps)).catch(err => toast(friendlyError(err)));
+}, true);
 function dragBegin() {
   const src = DR.src;
   if (src.id) {
@@ -691,7 +703,10 @@ function render() {
   h += `<div class="sum"><div><b>${usedSlots}</b>予約した枠</div><div class="${none ? "alert" : ""}"><b>${none}</b>まだ予約のない人</div><div><b>${total - usedSlots}</b>空いている枠</div></div>`;
   h += balanceHtml();
   const sideTop = h; h = "";
-  h += `<div class="seg" role="group" aria-label="割り当て方"><button aria-pressed="${S.mode === "slot"}" data-act="mode" data-v="slot">枠から選ぶ</button><button aria-pressed="${S.mode === "student"}" data-act="mode" data-v="student">教習生から選ぶ</button></div>`;
+  // 割り当て方の切り替え（枠から選ぶ／教習生から選ぶ）は廃止。下の教習生を長押しでドラッグ（または短くタップ）すると、
+  // 人数の色分けはそのままで、その人が入れる枠が青く光る（2026-11-20 依頼者指定）
+  const pick = S.pick && ST(S.pick);
+  if (pick) h += `<div class="picking"><span><b>${esc(nm(pick))}</b>：<b class="okc">青い枠</b>をタップすると入ります</span><button class="btn" data-act="unpick">やめる</button></div>`;
 
   let maxN = 1; ds.forEach(d => { for (let p = 1; p <= 10; p++) if (!isOff(d, p)) maxN = Math.max(maxN, S.students.filter(s => isFree(s.token, d, p)).length); });
   const T1 = Math.floor(maxN / 3), T2 = Math.floor(maxN * 2 / 3);
@@ -790,6 +805,7 @@ function render() {
   root.innerHTML = top + (isPC()
     ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}${trayHtml()}</div>${countListHtml()}</div></div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
     : alertsH + sideTop + gridH + trayHtml() + countListHtml() + listH + confH) + `</div></section>`;
+  paintPick();
 }
 
 function slotSheet(ds, p, type = "normal", start) {
@@ -1398,7 +1414,6 @@ function renderSettings() {
   ${lookSettingsHtml()}
   <div class="setgrp"><h3>予約の管理</h3>
     <div class="setlabel">開いた時に表示する週</div><div class="chips wrapchips">${pc("startweek", "next", sw, "来週")}${pc("startweek", "this", sw, "今週")}</div>
-    <div class="setlabel">最初の割り当て方</div><div class="chips wrapchips">${pc("startmode", "slot", sm, "枠から選ぶ")}${pc("startmode", "student", sm, "教習生から選ぶ")}</div>
     <div class="setlabel">「今週の割り振り」の一覧</div><div class="chips wrapchips">${pc("balopen", "1", bo, "最初から開いておく")}${pc("balopen", "0", bo, "閉じておく")}</div>
     <p class="setnote">「開いた時」の設定は、次に画面を開いた時から使われます。</p></div>
   <div class="setgrp"><h3>通知・アプリ</h3>${pushStatusHtml()}<div class="list"><button class="btn full" data-act="push">この端末で通知を受け取る</button>${installButton() ? `<div>${installButton()}</div>` : ""}</div>
@@ -1433,7 +1448,8 @@ document.addEventListener("click", async e => {
     else if (a === "reload") { await loadWeek(); }
     else if (a === "retry") location.reload();
     else if (a === "wk") { S.week = addDays(S.week, +t.dataset.v); S.pick = null; await loadWeek(); }
-    else if (a === "balPick") { S.mode = "student"; S.pick = t.dataset.s; S.ptype = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    else if (a === "balPick") { S.pick = S.pick === t.dataset.s && t.closest(".tray") ? null : t.dataset.s; S.ptype = null; render(); if (S.pick && !t.closest(".tray")) document.querySelector(".gridwrap")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else if (a === "unpick") { S.pick = null; render(); }
     else if (a === "mode") { S.mode = t.dataset.v; if (S.mode === "slot") S.pick = null; render(); }
     else if (a === "pick") { S.pick = S.pick === t.dataset.s ? null : t.dataset.s; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
     else if (a === "unpick") { S.pick = null; S.ptype = null; render(); }
