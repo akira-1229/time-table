@@ -519,9 +519,10 @@ function countListHtml() {
 // そのまま指を動かして光っている枠で離すと入る。入れた予約（1人だけの枠）も長押しで別の枠へ動かせる
 function trayHtml() {
   if (!S.students.length) return "";
+  // 予定表の右横に縦に並べる（できるだけ多くの人が入るよう1人1行・小さめ。2026-11-20 依頼者指定）
   const list = S.students.slice().sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
-  return `<div class="tray"><div class="tray-h">教習生を<b>長押し</b>して、予定表の<b class="okc">青い枠</b>までドラッグすると入ります（短くタップすると青い枠を出したままにできます）。入れた予約も長押しで動かせます。</div>
-    <div class="tray-l">${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(s.studentNo || "")}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}回</span></button>`; }).join("")}</div></div>`;
+  return `<div class="tray" aria-label="担当の教習生（長押しで予定表へドラッグ）"><div class="tray-h">教習生<small>長押しで移動</small></div>
+    <div class="tray-l">${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(String(s.studentNo || "").slice(-4))}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}</span></button>`; }).join("")}</div></div>`;
 }
 const DR = { timer: null, active: false, pend: false, swallow: false, src: null, x: 0, y: 0, ok: new Map(), ghost: null, hover: null, scroll: null };
 // 予約（危険予測・高速教習は組ごと）をいったん外して、別の枠に置けるか
@@ -726,7 +727,7 @@ function render() {
   }
   if ((CFG.autoAssign || {}).weeklyMax && !S.confirmed) h += `<button class="btn primary full" style="margin-bottom:8px" data-act="autoAssign">この週を自動で割り振る（未確定で入ります）</button>`;
   if (!S.confirmed && gkNow().length) h += `<button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gkNow().length}人）</button>`;
-  h += weekNav + `<div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
+  h += weekNav + `<div class="gridrow"><div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
   const tds = dateStr(today()), tc = d => d === tds ? "tday" : "";
   ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
   h += `</tr></thead><tbody>`;
@@ -773,7 +774,7 @@ function render() {
     });
     h += `</tr>`;
   }
-  h += `</tbody></table></div>`;
+  h += `</tbody></table></div>${trayHtml()}</div>`;
   const gridH = h; h = "";
 
   if (S.mode === "student") {
@@ -803,8 +804,8 @@ function render() {
   const confH = h;
   // PC表示：左にマス目、右に集計・お知らせ・教習生の一覧・確定ボタン。スマホは上から順に並べる
   root.innerHTML = top + (isPC()
-    ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}${trayHtml()}</div>${countListHtml()}</div></div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
-    : alertsH + sideTop + gridH + trayHtml() + countListHtml() + listH + confH) + `</div></section>`;
+    ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}</div></div></div><aside class="asg-side">${countListHtml()}${sideTop}${alertsH}${listH}${confH}</aside></div>`
+    : alertsH + sideTop + gridH + countListHtml() + listH + confH) + `</div></section>`;
   paintPick();
 }
 
