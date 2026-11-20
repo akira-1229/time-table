@@ -514,9 +514,130 @@ function countListHtml() {
   }).join("")}</div>`;
 }
 
+/* ---------- パズルのように手で組み立てる（ドラッグ。2026-11-20 依頼者指定） ---------- */
+// 予定表の真下に、担当の教習生（番号・名前・この週の回数）を並べる。長押しすると、その人を入れられる枠が緑の枠で光り、
+// そのまま指を動かして光っている枠で離すと入る。入れた予約（1人だけの枠）も長押しで別の枠へ動かせる
+function trayHtml() {
+  if (!S.students.length) return "";
+  const list = S.students.slice().sort((a, b) => String(a.studentNo || "").localeCompare(String(b.studentNo || "")));
+  return `<div class="tray"><div class="tray-h">教習生を<b>長押し</b>して、予定表の<b class="okc">緑の枠</b>までドラッグすると入ります。入れた予約も長押しで動かせます。</div>
+    <div class="tray-l">${list.map(s => { const n = weekCount(s.token); return `<button class="chip${n ? "" : " zero"}${S.pick === s.token ? " on" : ""}" data-drag="${s.token}" data-act="balPick" data-s="${s.token}" aria-label="${esc(nm(s))} この週${n}回（長押しでドラッグ）"><span class="no">${esc(s.studentNo || "")}</span><span class="nm">${esc(s.name)}</span><span class="n">${n}回</span></button>`; }).join("")}</div></div>`;
+}
+const DR = { timer: null, active: false, pend: false, swallow: false, src: null, x: 0, y: 0, ok: new Map(), ghost: null, hover: null, scroll: null };
+// 予約（危険予測・高速教習は組ごと）をいったん外して、別の枠に置けるか
+function moveEval(ids, d, a) {
+  const g = S.bookings.filter(b => ids.includes(b.id)); if (!g.length) return { ok: false };
+  const s = stOf(g[0]), type = g[0].lessonType || "", set = new Set(ids), kb = S.bookings, kp = S.pending;
+  S.bookings = kb.filter(b => !set.has(b.id)); S.pending = kp.filter(b => !set.has(b.id));
+  try { return type ? evaluatePair(s, d, a, type) : evaluate(s, d, a); } finally { S.bookings = kb; S.pending = kp; }
+}
+function dragTargets(src) {
+  const ok = new Map();
+  document.querySelectorAll("td[data-cell]").forEach(td => {
+    const [d, ps] = td.dataset.cell.split("|"), p = +ps;
+    if (isPast(d)) return;
+    if (src.tok) {
+      const s = ST(src.tok); if (!s) return;
+      const types = specialTypes(s);
+      if (types.includes("kiken")) { const ev = evaluatePair(s, d, p, "kiken"); if (ev.ok) ok.set(td, { ty: "kiken" }); }
+      else if (types.length) { const ty = ["hw3", "hwSolo"].find(t => evaluatePair(s, d, p, t).ok); if (ty) ok.set(td, { ty }); }
+      else if (evaluate(s, d, p).ok !== false) ok.set(td, { ty: "" });
+    } else if (!(d === src.date && p === src.start)) {
+      const ev = moveEval(src.ids, d, p); if (ev.ok !== false && !ev.dark) ok.set(td, {});
+    }
+  });
+  return ok;
+}
+function dragBegin() {
+  const src = DR.src;
+  if (src.id) {
+    const b = S.bookings.find(x => x.id === src.id);
+    if (!b || b.result || b.subUid || isPast(b.date) || bookingsAt(b.date, b.period).length > 1) return dragEnd();
+    const g = b.pairId ? S.bookings.filter(x => x.token === b.token && x.pairId === b.pairId) : [b];
+    Object.assign(src, { ids: g.map(x => x.id), date: b.date, start: Math.min(...g.map(x => x.period)), tokOf: b.token });
+  }
+  DR.ok = dragTargets(src);
+  DR.active = true;
+  const s = ST(src.tok || src.tokOf);
+  DR.ghost = document.createElement("div"); DR.ghost.className = "dragghost";
+  DR.ghost.textContent = s ? `${s.studentNo ? s.studentNo + " " : ""}${s.name}` : "";
+  document.body.appendChild(DR.ghost); document.body.classList.add("dragging");
+  DR.ok.forEach((v, td) => td.classList.add("dropok"));
+  src.el.classList.add("dragsrc");
+  if (!DR.ok.size) toast("この週に入れられる枠がありません");
+  try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
+  dragMove(DR.x, DR.y);
+}
+function dragMove(x, y) {
+  DR.x = x; DR.y = y;
+  if (!DR.active) return;
+  DR.ghost.style.transform = `translate(${x - 40}px, ${y - 46}px)`;
+  const el = document.elementFromPoint(x, y), td = el && el.closest && el.closest("td[data-cell]");
+  if (DR.hover && DR.hover !== td) DR.hover.classList.remove("drophover");
+  DR.hover = td && DR.ok.has(td) ? td : null;
+  if (DR.hover) DR.hover.classList.add("drophover");
+  // 端に来たら、予定表（横）と画面（縦）を動かす
+  const gw = document.querySelector(".gridwrap"), r = gw && gw.getBoundingClientRect(), E = 36;
+  const dx = r && y > r.top && y < r.bottom ? (x < r.left + E ? -12 : x > r.right - E ? 12 : 0) : 0, dy = y < E + 40 ? -12 : y > innerHeight - E - 60 ? 12 : 0;
+  clearInterval(DR.scroll);
+  if (dx || dy) DR.scroll = setInterval(() => { if (dx && gw) gw.scrollLeft += dx; if (dy) scrollBy(0, dy); dragMove(DR.x, DR.y); }, 30);
+}
+function dragEnd() {
+  clearTimeout(DR.timer); clearInterval(DR.scroll);
+  const was = DR.active, src = DR.src, hit = DR.hover && DR.ok.get(DR.hover), cell = DR.hover && DR.hover.dataset.cell;
+  DR.ok.forEach((v, td) => td.classList.remove("dropok", "drophover"));
+  if (DR.ghost) DR.ghost.remove();
+  if (src && src.el) src.el.classList.remove("dragsrc");
+  document.body.classList.remove("dragging");
+  Object.assign(DR, { active: false, src: null, ghost: null, hover: null, ok: new Map() });
+  if (!was) return;
+  DR.swallow = true; setTimeout(() => { DR.swallow = false; }, 450);
+  const pend = DR.pend; DR.pend = false;
+  if (!hit) { if (pend) render(); return; }
+  const [d, ps] = cell.split("|"), p = +ps;
+  if (src.tok) (hit.ty ? assignPair(src.tok, d, p, hit.ty) : assign(src.tok, d, p)).catch(e => toast(friendlyError(e)));
+  else moveBooking(src.ids, d, p).catch(e => toast(friendlyError(e)));
+}
+// 予約を別の枠へ動かす（組は組ごと）。確定済みなら教習生に「予約が変更されました」を通知し、確認はやり直してもらう
+async function moveBooking(ids, d, a) {
+  const g = S.bookings.filter(b => ids.includes(b.id)); if (!g.length) return;
+  const ev = moveEval(ids, d, a); if (ev.ok === false) return toast(ev.reason);
+  const tok = g[0].token, min = Math.min(...g.map(b => b.period)), before = `${md(g[0].date)} ${g.length > 1 ? spanText(min, g[0].lessonType) : min}限`;
+  for (const b of g) {
+    const np = a + (b.period - min);
+    await updateDoc(doc(db, "students", tok, "bookings", b.id), { date: d, period: np, weekId: wid(), ackAt: null, updatedAt: serverTimestamp() });
+    [b, S.pending.find(x => x.id === b.id)].forEach(x => { if (x) Object.assign(x, { date: d, period: np, weekId: wid(), ackAt: null }); });
+  }
+  const after = `${md(d)} ${g.length > 1 ? spanText(a, g[0].lessonType) : a}限`;
+  if (g[0].status === "confirmed") { await notifyStudent(tok, "changed", "予約が変更されました", `${before} → ${after}${typeName(g[0]) ? `（${typeName(g[0])}）` : ""}`); toast(`${nm(ST(tok))}に変更を通知しました`); }
+  else toast(`${nm(ST(tok))}を ${after} に動かしました`);
+  render();
+}
+document.addEventListener("pointerdown", e => {
+  if (S.view !== "assign" || (e.pointerType === "mouse" && e.button !== 0)) return;
+  const chip = e.target.closest && e.target.closest("[data-drag]"), bk = !chip && e.target.closest && e.target.closest('button.wc[data-act="booked"]');
+  if (!chip && !bk) return;
+  DR.src = chip ? { tok: chip.dataset.drag, el: chip } : { id: bk.dataset.id, el: bk };
+  DR.x = e.clientX; DR.y = e.clientY; DR.sx = e.clientX; DR.sy = e.clientY;
+  clearTimeout(DR.timer); DR.timer = setTimeout(dragBegin, e.pointerType === "mouse" ? 250 : 380);
+});
+document.addEventListener("pointermove", e => {
+  if (!DR.src) return;
+  if (!DR.active) { if (Math.hypot(e.clientX - DR.sx, e.clientY - DR.sy) > 8) { clearTimeout(DR.timer); DR.src = null; } return; }
+  dragMove(e.clientX, e.clientY);
+});
+document.addEventListener("touchmove", e => { if (DR.active) { e.preventDefault(); const t = e.touches[0]; if (t) dragMove(t.clientX, t.clientY); } }, { passive: false });
+document.addEventListener("pointerup", () => { if (DR.src || DR.active) dragEnd(); });
+document.addEventListener("pointercancel", () => { if (!DR.active) { clearTimeout(DR.timer); DR.src = null; } });
+document.addEventListener("touchend", () => { if (DR.active) dragEnd(); });
+document.addEventListener("contextmenu", e => { if (DR.src || DR.active) e.preventDefault(); });
+// ドラッグの後のタップ（クリック）は無視する
+document.addEventListener("click", e => { if (DR.swallow) { e.stopPropagation(); e.preventDefault(); DR.swallow = false; } }, true);
+
 /* ---------- 画面 ---------- */
 function render() {
   if (!S.uid) return;
+  if (DR.active) { DR.pend = true; return; }   // ドラッグ中は描き直さない（終わってから描く）
   const ds = days(); const wEnd = ds[ds.length - 1];
   let h = `<div class="topbar"><div><h1>予約の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員・担当 ${S.students.length}人</small></div>
     <span><button class="refbtn" data-act="reload" aria-label="最新の情報に更新"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v6h-6z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>更新</button></span></div>`;
@@ -598,7 +719,7 @@ function render() {
     h += `<tr><th class="pl">${p}限<small>${P[p][0]}</small></th>`;
     ds.forEach(d => {
       const lb = label(d, p), bs = bookingsAt(d, p), b = bs.length === 1 ? bs[0] : bookAt(d, p), sb = subAt(d, p);
-      const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}">`;
+      const td = `<td class="${tc(d)}${d === tds && p === 10 ? " tN" : ""}" data-cell="${d}|${p}">`;
       if (!bs.length && sb) { h += `${td}<button class="wc bk subx" data-act="subInfo" data-id="${sb.id}" aria-label="${lb} ${esc(sb.subFromName || "")}指導員から頼まれた教習">${esc(String(sb.subStudent || "?").replace(/さん.*$/, "").slice(0, 4))}<small class="subtag">${esc(String(sb.subFromName || "").slice(0, 2))}依頼</small></button></td>`; return; }
       if (!bs.length && isOff(d, p)) { h += `${td}<button class="wc offx" disabled aria-label="${lb} 指導員の予定あり">✕<small>予定</small></button></td>`; return; }
       if (isPast(d)) {
@@ -667,8 +788,8 @@ function render() {
   const confH = h;
   // PC表示：左にマス目、右に集計・お知らせ・教習生の一覧・確定ボタン。スマホは上から順に並べる
   root.innerHTML = top + (isPC()
-    ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}</div>${countListHtml()}</div></div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
-    : alertsH + sideTop + gridH + countListHtml() + listH + confH) + `</div></section>`;
+    ? `<div class="asg"><div class="asg-main"><div class="asg-grid"><div class="asg-g">${gridH}${trayHtml()}</div>${countListHtml()}</div></div><aside class="asg-side">${sideTop}${alertsH}${listH}${confH}</aside></div>`
+    : alertsH + sideTop + gridH + trayHtml() + countListHtml() + listH + confH) + `</div></section>`;
 }
 
 function slotSheet(ds, p, type = "normal", start) {
