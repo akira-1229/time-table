@@ -1708,4 +1708,4 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign, itemOf, eff };
+if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign, itemOf, eff, moveEval, stOf, moveBookingT: moveBooking };
