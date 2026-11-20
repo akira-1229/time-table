@@ -491,10 +491,11 @@ body.pc .tray{width:180px}
 .gridrow .wk th.pl small{font-size:9px}
 /* スマホ：予定表は7日分が入る最小の幅（1日24px）にして、残りを全部教習生の列に回す。左右の余白も使う（依頼者指定：横幅を最大限に） */
 body:not(.pc) .gridrow{margin:0 -12px;gap:4px}
-body:not(.pc) .gridrow .gridwrap{flex:0 0 auto;margin:0;padding:0}
-body:not(.pc) .gridrow .wk{width:222px;border-spacing:3px 3px}
+body:not(.pc) .gridrow .gridwrap{flex:0 0 222px;width:222px;min-width:222px;max-width:222px;margin:0;padding:0}
+body:not(.pc) .gridrow .wk .wc{min-width:0}
+body:not(.pc) .gridrow .wk{width:222px;min-width:0;border-spacing:3px 3px}
 body:not(.pc) .gridrow .wk th.pl small{font-size:8px}
-body:not(.pc) .gridrow .tray{flex:1 1 auto;width:auto;min-width:88px}
+body:not(.pc) .gridrow .tray{flex:1 1 0;width:auto;min-width:0}
 body.pc .gridrow .wk{min-width:420px}
 body.pc .asg-side .cnt{position:static;max-height:none;margin:0 0 12px}
 body.pc .tray .chip{font-size:13px;min-height:32px}
