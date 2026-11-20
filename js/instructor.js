@@ -1608,9 +1608,13 @@ document.addEventListener("click", async e => {
     }
     else if (a === "autoAssign") {
       // もう一度押した時：未確定の予約を消して組み直すか、今の予約に足すかを選ぶ（依頼者と確認）
+      // 手で途中まで入れてから押した時は「入れた予約はそのままで、残りを自動で」を一番に出す（2026-11-20 依頼者指定）
       if (S.bookings.some(b => b.status === "draft" && !b.result)) sheet(`<h3>この週を自動で割り振る</h3><p>この週には、もう未確定の予約が入っています。</p>
-        <div class="list"><button class="btn primary full" data-act="autoRedo">未確定の予約を全部消して、最初から組み直す</button><button class="btn full" data-act="autoAdd">今の予約はそのままで、足りない分だけ足す</button><button class="btn full" data-act="close">やめる</button></div>
-        <p style="font-size:12px;color:var(--muted)">組み直すと、手で入れた未確定の予約も消えます。確定済みの予約はそのままです。</p>`);
+        <div class="list"><button class="btn primary full" data-act="autoAdd">入っている予約はそのままで、残りを自動で入れる</button>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 6px">手で入れた予約は動かさず、その続きから、足りない分だけ入れます。</p>
+        <button class="btn full" data-act="autoRedo">未確定の予約を全部消して、最初から組み直す</button>
+        <p style="font-size:12px;color:var(--lv3);margin:0 0 6px">こちらは手で入れた未確定の予約も消えます（確定済みの予約はそのままです）。</p>
+        <button class="btn full" data-act="close">やめる</button></div>`);
       else if (confirm("この週の空いている枠に、ルールどおり自動で予約を入れます（未確定で入ります。確定するまで教習生には通知されません）。よろしいですか？")) await autoAssign();
     }
     else if (a === "autoAdd") { closeSheet(); await autoAssign(); }
