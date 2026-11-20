@@ -510,3 +510,7 @@ td.dropok{outline:3px solid #2563EB;outline-offset:-3px;border-radius:6px;backgr
 .sinfo td{padding:6px 0;border-bottom:1px solid var(--line)}
 .sinfo tr:last-child td{border-bottom:0}
 .sinfo small{color:var(--muted)}
+.dragsrc{opacity:.45}
+td.drophover{background:color-mix(in srgb,#2563EB 40%,transparent)}
+body.dragging{-webkit-user-select:none;user-select:none;cursor:grabbing}
+.dragghost{position:fixed;left:0;top:0;z-index:50;pointer-events:none;padding:8px 14px;border-radius:999px;background:#2563EB;color:#fff;font-weight:700;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.3);white-space:nowrap}

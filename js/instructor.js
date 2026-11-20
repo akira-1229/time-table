@@ -554,12 +554,101 @@ function paintPick() {
   dragTargets({ tok: S.pick }).forEach((v, td) => { td.classList.add("dropok"); td.dataset.pickok = v.ty || "-"; });
 }
 document.addEventListener("click", e => {
-  const td = S.pick && e.target.closest && e.target.closest("td[data-pickok]");
+  const td = S.pick && !DR.swallow && e.target.closest && e.target.closest("td[data-pickok]");
   if (!td) return;
   e.stopPropagation(); e.preventDefault();
   const [d, ps] = td.dataset.cell.split("|"), ty = td.dataset.pickok === "-" ? "" : td.dataset.pickok, tok = S.pick;
   (ty ? assignPair(tok, d, +ps, ty) : assign(tok, d, +ps)).catch(err => toast(friendlyError(err)));
 }, true);
+// 予定表に入れた予約（1人だけの枠）は、長押しして別の枠へドラッグで動かせる（組は組ごと。2026-11-21 依頼者指定）
+const DR = { timer: null, active: false, pend: false, swallow: false, src: null, x: 0, y: 0, ok: new Map(), ghost: null, hover: null, scroll: null };
+function dragBegin() {
+  const src = DR.src;
+  document.querySelectorAll("td.dropok").forEach(td => td.classList.remove("dropok"));   // タップで出していた青い枠はいったん消す
+  if (src.id) {
+    const b = S.bookings.find(x => x.id === src.id);
+    if (!b || b.result || b.subUid || isPast(b.date) || bookingsAt(b.date, b.period).length > 1) return dragEnd();
+    const g = b.pairId ? S.bookings.filter(x => x.token === b.token && x.pairId === b.pairId) : [b];
+    Object.assign(src, { ids: g.map(x => x.id), date: b.date, start: Math.min(...g.map(x => x.period)), tokOf: b.token });
+  }
+  DR.ok = dragTargets(src);
+  DR.active = true;
+  const s = ST(src.tok || src.tokOf);
+  DR.ghost = document.createElement("div"); DR.ghost.className = "dragghost";
+  DR.ghost.textContent = s ? `${s.studentNo ? s.studentNo + " " : ""}${s.name}` : "";
+  document.body.appendChild(DR.ghost); document.body.classList.add("dragging");
+  DR.ok.forEach((v, td) => td.classList.add("dropok"));
+  src.el.classList.add("dragsrc");
+  if (!DR.ok.size) toast("この週に入れられる枠がありません");
+  try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
+  dragMove(DR.x, DR.y);
+}
+function dragMove(x, y) {
+  DR.x = x; DR.y = y;
+  if (!DR.active) return;
+  DR.ghost.style.transform = `translate(${x - 40}px, ${y - 46}px)`;
+  const el = document.elementFromPoint(x, y), td = el && el.closest && el.closest("td[data-cell]");
+  if (DR.hover && DR.hover !== td) DR.hover.classList.remove("drophover");
+  DR.hover = td && DR.ok.has(td) ? td : null;
+  if (DR.hover) DR.hover.classList.add("drophover");
+  // 端に来たら、予定表（横）と画面（縦）を動かす
+  const gw = document.querySelector(".gridwrap"), r = gw && gw.getBoundingClientRect(), E = 36;
+  const dx = r && y > r.top && y < r.bottom ? (x < r.left + E ? -12 : x > r.right - E ? 12 : 0) : 0, dy = y < E + 40 ? -12 : y > innerHeight - E - 60 ? 12 : 0;
+  clearInterval(DR.scroll);
+  if (dx || dy) DR.scroll = setInterval(() => { if (dx && gw) gw.scrollLeft += dx; if (dy) scrollBy(0, dy); dragMove(DR.x, DR.y); }, 30);
+}
+function dragEnd() {
+  clearTimeout(DR.timer); clearInterval(DR.scroll);
+  const was = DR.active, src = DR.src, hit = DR.hover && DR.ok.get(DR.hover), cell = DR.hover && DR.hover.dataset.cell;
+  DR.ok.forEach((v, td) => td.classList.remove("dropok", "drophover"));
+  if (DR.ghost) DR.ghost.remove();
+  if (src && src.el) src.el.classList.remove("dragsrc");
+  document.body.classList.remove("dragging");
+  Object.assign(DR, { active: false, src: null, ghost: null, hover: null, ok: new Map() });
+  if (!was) return;
+  DR.swallow = true; setTimeout(() => { DR.swallow = false; }, 450);
+  const pend = DR.pend; DR.pend = false;
+  if (!hit) { if (pend) render(); return; }
+  const [d, ps] = cell.split("|"), p = +ps;
+  moveBooking(src.ids, d, p).catch(e => toast(friendlyError(e)));
+}
+// 予約を別の枠へ動かす（組は組ごと）。確定済みなら教習生に「予約が変更されました」を通知し、確認はやり直してもらう
+async function moveBooking(ids, d, a) {
+  const g = S.bookings.filter(b => ids.includes(b.id)); if (!g.length) return;
+  const ev = moveEval(ids, d, a); if (ev.ok === false) return toast(ev.reason);
+  const tok = g[0].token, min = Math.min(...g.map(b => b.period)), before = `${md(g[0].date)} ${g.length > 1 ? spanText(min, g[0].lessonType) : min}限`;
+  for (const b of g) {
+    const np = a + (b.period - min);
+    await updateDoc(doc(db, "students", tok, "bookings", b.id), { date: d, period: np, weekId: wid(), ackAt: null, updatedAt: serverTimestamp() });
+    [b, S.pending.find(x => x.id === b.id)].forEach(x => { if (x) Object.assign(x, { date: d, period: np, weekId: wid(), ackAt: null }); });
+  }
+  const after = `${md(d)} ${g.length > 1 ? spanText(a, g[0].lessonType) : a}限`;
+  if (g[0].status === "confirmed") { await notifyStudent(tok, "changed", "予約が変更されました", `${before} → ${after}${typeName(g[0]) ? `（${typeName(g[0])}）` : ""}`); toast(`${nm(ST(tok))}に変更を通知しました`); }
+  else toast(`${nm(ST(tok))}を ${after} に動かしました`);
+  render();
+}
+document.addEventListener("pointerdown", e => {
+  if (S.view !== "assign" || (e.pointerType === "mouse" && e.button !== 0)) return;
+  // 名前（右の列）からはドラッグしない。予定表に入れた予約だけ長押しで動かせる（2026-11-21 依頼者指定）
+  const bk = e.target.closest && e.target.closest('button.wc[data-act="booked"]');
+  if (!bk) return;
+  DR.src = { id: bk.dataset.id, el: bk };
+  DR.x = e.clientX; DR.y = e.clientY; DR.sx = e.clientX; DR.sy = e.clientY;
+  clearTimeout(DR.timer); DR.timer = setTimeout(dragBegin, e.pointerType === "mouse" ? 250 : 380);
+});
+document.addEventListener("pointermove", e => {
+  if (!DR.src) return;
+  if (!DR.active) { if (Math.hypot(e.clientX - DR.sx, e.clientY - DR.sy) > 8) { clearTimeout(DR.timer); DR.src = null; } return; }
+  dragMove(e.clientX, e.clientY);
+});
+document.addEventListener("touchmove", e => { if (DR.active) { e.preventDefault(); const t = e.touches[0]; if (t) dragMove(t.clientX, t.clientY); } }, { passive: false });
+document.addEventListener("pointerup", () => { if (DR.src || DR.active) dragEnd(); });
+document.addEventListener("pointercancel", () => { if (!DR.active) { clearTimeout(DR.timer); DR.src = null; } });
+document.addEventListener("touchend", () => { if (DR.active) dragEnd(); });
+document.addEventListener("contextmenu", e => { if (DR.src || DR.active) e.preventDefault(); });
+// ドラッグの後のタップ（クリック）は無視する
+document.addEventListener("click", e => { if (DR.swallow) { e.stopPropagation(); e.preventDefault(); DR.swallow = false; } }, true);
+
 // 教習生を長押しすると、その教習生の詳細を出す（検定・期限などが分かるように。ドラッグはやめた。2026-11-21 依頼者指定）
 const LP = { timer: null, sx: 0, sy: 0, swallow: false };
 document.addEventListener("pointerdown", e => {
@@ -607,6 +696,7 @@ function studentInfo(tok) {
 /* ---------- 画面 ---------- */
 function render() {
   if (!S.uid) return;
+  if (DR.active) { DR.pend = true; return; }   // ドラッグ中は描き直さない（終わってから描く）
   const ds = days(); const wEnd = ds[ds.length - 1];
   let h = `<div class="topbar"><div><h1>予約の管理</h1><small>${esc(S.me ? S.me.name : "")} 指導員・担当 ${S.students.length}人</small></div>
     <span><button class="refbtn" data-act="reload" aria-label="最新の情報に更新"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M20.5 3.5v6h-6z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>更新</button></span></div>`;
@@ -1669,4 +1759,4 @@ document.addEventListener("change", e => {
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "pw") document.querySelector('[data-act="login"]').click(); });
 // 手元の確認用（デモの時だけ）：ルール判定を外から呼べるようにする
-if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign, itemOf, eff, moveEval, stOf, studentInfo };
+if (DEMO) self.__t = { gkListSheet, S, evaluate, evaluatePair, specialTypes, assign, assignPair, removeBooking, days, render, loadWeek, confirmWeek, markResult, planOf, pendingOf, weekCount, autoAssign, itemOf, eff, moveEval, stOf, studentInfo, moveBookingT: moveBooking };
