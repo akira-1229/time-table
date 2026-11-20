@@ -729,7 +729,7 @@ function render() {
   if (!S.confirmed && gkNow().length) h += `<button class="btn accent full" style="margin-bottom:8px" data-act="gkList">学科の確認が必要な教習生（${gkNow().length}人）</button>`;
   h += weekNav + `<div class="gridrow"><div class="gridwrap"><table class="wk"><thead><tr><th class="pl"></th>`;
   const tds = dateStr(today()), tc = d => d === tds ? "tday" : "";
-  ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
+  ds.forEach(d => { const w = parseDate(d).getDay(); h += `<th class="${d === tds ? "tday t1" : ""}" style="${w === 6 ? "color:var(--blue)" : w === 0 ? "color:#C0392B" : ""}">${parseDate(d).getDate()}<br>(${WD[w]})${d === tds ? "<small>今日</small>" : ""}</th>`; });
   h += `</tr></thead><tbody>`;
   for (let p = 1; p <= 10; p++) {
     h += `<tr><th class="pl">${p}限<small>${P[p][0]}</small></th>`;
