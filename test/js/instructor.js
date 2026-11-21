@@ -692,7 +692,7 @@ function studentInfo(tok) {
   ];
   sheet(`<h3>${esc(nm(s))}</h3>${s.nameKana ? `<p style="margin:-6px 0 8px;font-size:12px;color:var(--muted)">${esc(s.nameKana)}</p>` : ""}
     <table class="sinfo">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>
-    <div class="list" style="margin-top:12px"><button class="btn primary full" data-act="balPick" data-s="${tok}" data-close="1">この教習生の入れる枠を出す</button><button class="btn full" data-act="close">閉じる</button></div>`);
+    <div class="list" style="margin-top:12px"><button class="btn full" data-act="close">閉じる</button></div>`, { up: true });
 }
 
 /* ---------- 画面 ---------- */
