@@ -259,6 +259,13 @@ function kenteiBlock(s, ds, p) {
   if (ds === next && p < 5) return `検定日の翌日（${md(next)}）は、5時限目から入れられます`;
   return "";
 }
+// 手で入れる時の検定日の警告（2026-11-26 依頼者指定）：その教習生の今の段階の検定日（みきわめ合格済みなら mikiwame{段階}.kenteiDate、
+// なければ kenteiPlan{段階}（予定）。みきわめ記録の有無は問わない）の当日以降に入れようとしたら確認を出す。確認すれば入れられる（止めない）。
+// s は入れる段階の教習生（eff(s)・stOf(b)）。仮想第2段階（_v）の第2段階の教習は第1段階の検定日より後に入れるのが正常なので出さない（kenteiBlock のとおり）。
+// 自動割り振り（autoAssign・gkPlace。quiet）からは呼ばない。自動では slotOrder で検定日当日以降を候補から外すだけ。evaluate／evaluatePair には入れない
+const kenteiDayOf = s => { if (!s || s._v) return null; const m = s[`mikiwame${s.stage}`]; return (m && m.passed && m.kenteiDate) || s[`kenteiPlan${s.stage}`] || null; };
+const kenteiWarn = (s, ds) => { const k = kenteiDayOf(s); return k && ds >= k ? `${nm(s)}は ${md(k)} が検定日です。\nその日以降（${md(ds)}）に教習を入れようとしています。\n\n入れますか？` : ""; };
+const kenteiConfirm = (s, ds) => { const w = kenteiWarn(s, ds); return !w || confirm(w); };
 // 予約を足した時に、危険予測の順番（ちょうど○時限目）が崩れないか。すでに崩れている時は、直すための操作を止めない
 function seqCheck(s, extra) {
   if (!planOf(s).ok) return "";
@@ -618,6 +625,7 @@ function dragEnd() {
 async function moveBooking(ids, d, a) {
   const g = S.bookings.filter(b => ids.includes(b.id)); if (!g.length) return;
   const ev = moveEval(ids, d, a); if (ev.ok === false) return toast(ev.reason);
+  if (!kenteiConfirm(stOf(g[0]), d)) return render();   // ドラッグで検定日当日以降へ動かす時も確認（手の操作だけ。組は1回）
   const tok = g[0].token, min = Math.min(...g.map(b => b.period)), before = `${md(g[0].date)} ${g.length > 1 ? spanText(min, g[0].lessonType) : min}限`;
   for (const b of g) {
     const np = a + (b.period - min);
@@ -965,6 +973,7 @@ async function assignPair(tok, ds, a, type = "kiken", force, gk, quiet) {
   if (!ev.ok) return toast(ev.reason);
   if (ev.sunBus && !force && !quiet && !gk && !busConfirm(s)) return;
   if (ev.dark && !force) return darkPairSheet(s, ds, a, type);
+  if (!quiet && !gk && !kenteiConfirm(eff(s), ds)) return;   // 手で入れる時だけ。組は開始日で1回（日没の確認シートの後は「強制」の時に1回）
   if (!gk) { const r = gakkaAsk(s, ds, span(a, type), type); if (r.length) return gakkaSheet(s, r, () => assignPair(tok, ds, a, type, force, true)); }
   const L = PT(type).label;
   const status = S.confirmed ? "confirmed" : "draft";
@@ -985,6 +994,7 @@ async function assign(tok, ds, p, gk, quiet) {
   const ev = evaluate(s, ds, p);
   if (ev.ok === false) return toast(ev.reason);
   if (ev.sunBus && !quiet && !busConfirm(s)) return;
+  if (!quiet && !gk && !kenteiConfirm(eff(s), ds)) return;   // 手で入れる時だけ（学科の確認シートから戻った時は gk なので出さない）
   if (!gk) { const r = gakkaAsk(s, ds, [p]); if (r.length) return gakkaSheet(s, r, () => assign(tok, ds, p, true)); }
   const status = S.confirmed ? "confirmed" : "draft";
   const data = { instructorUid: S.uid, date: ds, period: p, weekId: wid(), status, cancelRequested: false, result: null, stage: eff(s).stage, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
@@ -1003,11 +1013,15 @@ async function assign(tok, ds, p, gk, quiet) {
 //  ・日没が早い期間の警告が出る枠と、学科の確認が要る教習（第2段階10・13時限目）は入れない（指導員が手で入れる）
 //  ・どんなに空きが少なくても、全員が週1回は乗れるようにする（最低ライン。入れる枠が少ない人から先に）。
 //    ほかの指導員への依頼として自動で入れる仕組みは廃止（2026-11-09 依頼者指定）。入らなかった人は「今週の回数」で赤く点滅させる
-// 自動で入れる枠の順番。ふつうは日時の早い順。みきわめ不合格で検定日（予定）が決まっている人は、
-// 検定日の前日の1〜7限を一番に、あとは検定日に近い日から（検定日当日以降には入れない。依頼者指定）
+// 自動で入れる枠の順番。ふつうは日時の早い順。その段階の検定日（予定を含む）が設定されている人は、みきわめ記録の有無を問わず
+// 検定日当日以降には入れない（手動では入れられる。依頼者指定）。検定日の前日の1〜7限を一番に、あとは検定日に近い日から。
+// 検定日：みきわめ合格済みなら mikiwame.kenteiDate、それ以外は kenteiPlan{段階}（予定）。
+// 仮想第2段階（_v。第1段階の最低時限まで入っていてみきわめ前など）の検定日は第1段階の修了検定日で、第2段階の教習はその後に入れるため絞らない（kenteiBlock が担保）
 function slotOrder(s, mk) {
   const all = days().flatMap(d => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(q => [d, q]));
-  const plan = mk && !mk.passed && s[`kenteiPlan${s.stage}`];
+  s = eff(s);
+  if (s._v) return all;
+  const plan = (mk && mk.passed ? mk.kenteiDate : s[`kenteiPlan${s.stage}`]) || null;
   if (!plan) return all;
   const eve = dateStr(addDays(parseDate(plan), -1)), day = q => q <= 7 ? 0 : 1;
   return all.filter(([d]) => d < plan).sort((a, b) => ((a[0] === eve ? 0 : 1) + day(a[1])) - ((b[0] === eve ? 0 : 1) + day(b[1])) || b[0].localeCompare(a[0]) || day(a[1]) - day(b[1]) || a[1] - b[1]);
